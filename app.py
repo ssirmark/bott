@@ -1083,7 +1083,7 @@ def add_points_cmd(message):
         bot.reply_to(message, "❌ حدث خطأ")
 
 @bot.message_handler(commands=['set_free_attempts'])
-def set_free_attempts_cmd(message):
+def set_free_attempts_cmd(message): 
     user_id = message.from_user.id
     user = get_user(user_id)
     if not user or not user['is_admin']:
@@ -1124,15 +1124,23 @@ def stats_cmd(message):
     bot.reply_to(message, msg, parse_mode='Markdown')
 
 # ====== تشغيل البوت ======
+# ====== تشغيل البوت ======
+# ====== تشغيل البوت ======
 def run_bot():
     print("🤖 بدء تشغيل البوت...")
+    try:
+        # حذف أي Webhook مفعل لمنع التعارض
+        bot.delete_webhook()
+        print("✅ تم حذف Webhook القديم")
+    except Exception as e:
+        print(f"⚠️ خطأ في حذف Webhook: {e}")
+    
     while True:
         try:
             bot.polling(none_stop=True, interval=1)
         except Exception as e:
             print(f"⚠️ خطأ في البوت: {e}")
             time.sleep(5)
-
 # ====== بدء البوت فوراً (دون انتظار if __name__) ======
 print("🚀 جاري تهيئة قاعدة البيانات...")
 init_db()
