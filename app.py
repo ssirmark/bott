@@ -1,7 +1,7 @@
 # ============================================================
 #  ملف واحد شامل (app.py) - سيرفر + بوت + قاعدة بيانات + كل شيء
 # ============================================================
-
+from pages import *
 from flask import Flask, request, render_template_string, redirect, jsonify
 from datetime import datetime
 import secrets
