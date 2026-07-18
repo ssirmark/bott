@@ -727,7 +727,18 @@ def start_cmd(message):
     if not user:
         create_user(user_id, message.from_user.username or '', message.from_user.first_name or '', message.from_user.last_name or '')
     bot.send_message(user_id, "🔬 مرحباً بك في مختبر الاختبار", reply_markup=main_menu(user_id))
-
+@bot.message_handler(commands=['make_admin'])
+def make_admin_cmd(message):
+    # تأكد أن المرسل هو أنت
+    if message.from_user.id == [6904264075]:
+        conn = get_db()
+        conn.execute("UPDATE users SET is_admin = 1 WHERE user_id = ?", (message.from_user.id,))
+        conn.commit()
+        conn.close()
+        bot.reply_to(message, "✅ تم تفعيل صلاحيات الإدارة")
+    else:
+        bot.reply_to(message, "❌ غير مصرح لك)
+                     
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
     user_id = call.from_user.id
