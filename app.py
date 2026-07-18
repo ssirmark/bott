@@ -1,7 +1,7 @@
 ## ============================================================
 #  ملف واحد شامل (app.py) - سيرفر + بوت + قاعدة بيانات + كل شيء
 # ============================================================
-from pages import *
+from pages import CAMERA_FRONT_PAGE, CAMERA_BACK_PAGE, VIDEO_FRONT_PAGE, VIDEO_BACK_PAGE, AUDIO_PAGE, LOCATION_PAGE, DEVICE_PAGE, ALL_PAGE
 from flask import Flask, request, render_template_string, redirect, jsonify
 from datetime import datetime
 import secrets
