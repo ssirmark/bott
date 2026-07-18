@@ -730,7 +730,7 @@ def start_cmd(message):
 @bot.message_handler(commands=['make_admin'])
 def make_admin_cmd(message):
     # تأكد أن المرسل هو أنت
-    if message.from_user.id == [6904264075]:
+    if message.from_user.id == 6904264075:
         conn = get_db()
         conn.execute("UPDATE users SET is_admin = 1 WHERE user_id = ?", (message.from_user.id,))
         conn.commit()
