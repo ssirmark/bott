@@ -738,7 +738,8 @@ def make_admin_cmd(message):
         bot.reply_to(message, "✅ تم تفعيل صلاحيات الإدارة")
     else:
         bot.reply_to(message, "❌ غير مصرح لك")
- def admin_panel():
+
+def admin_panel():
     markup = InlineKeyboardMarkup(row_width=2)
     markup.add(
         InlineKeyboardButton("📊 الإحصائيات", callback_data="admin_stats"),
