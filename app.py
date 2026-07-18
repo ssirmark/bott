@@ -737,7 +737,7 @@ def make_admin_cmd(message):
         conn.close()
         bot.reply_to(message, "✅ تم تفعيل صلاحيات الإدارة")
     else:
-        bot.reply_to(message, "❌ غير مصرح لك)
+        bot.reply_to(message, "❌ غير مصرح لك")
                      
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
