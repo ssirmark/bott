@@ -18,7 +18,7 @@ from telebot import TeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ====== الإعدادات (config) ======
-BOT_TOKEN = os.environ.get('BOT_TOKEN', '8847400367:AAG20gRwvMtQXNVy2iZL9hB7gSp2JeUQIuI')
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '8847400367:AAHNhfgMGGuo3eCIiNjMD8u4EjnL7OkNLls')
 BASE_URL = os.environ.get('BASE_URL', 'https://bott-production-25ba.up.railway.app')
 SECRET_KEY = os.environ.get('SECRET_KEY', 'my-super-secret-key')
 DB_PATH = 'data.db'
