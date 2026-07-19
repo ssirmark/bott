@@ -1,4 +1,4 @@
-## ============================================================
+# ============================================================
 #  ملف واحد شامل (app.py) - سيرفر + بوت + قاعدة بيانات + كل شيء
 # ============================================================
 from flask import Flask, request, render_template_string, redirect, jsonify
@@ -108,6 +108,37 @@ def init_db():
             original_url TEXT,
             config TEXT,
             created TEXT
+        )
+    ''')
+    
+    # ====== جداول النقاط اليومية والمكافآت الجماعية ======
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS daily_rewards (
+            user_id INTEGER,
+            date TEXT,
+            last_claim TEXT,
+            PRIMARY KEY (user_id, date)
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS group_rewards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE,
+            admin_id INTEGER,
+            points INTEGER,
+            member_count INTEGER,
+            used_count INTEGER DEFAULT 0,
+            created TEXT
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS reward_usage (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT,
+            user_id INTEGER,
+            used_at TEXT
         )
     ''')
     
@@ -312,6 +343,100 @@ def get_session(session_id):
     session = conn.execute('SELECT * FROM sessions WHERE session_id = ?', (session_id,)).fetchone()
     conn.close()
     return session
+
+# ====== دوال النقاط اليومية والمكافآت الجماعية ======
+def get_daily_reward(user_id):
+    today = datetime.now().strftime('%Y-%m-%d')
+    conn = get_db()
+    result = conn.execute('''
+        SELECT last_claim FROM daily_rewards 
+        WHERE user_id = ? AND date = ?
+    ''', (user_id, today)).fetchone()
+    conn.close()
+    return result is None
+
+def claim_daily_reward(user_id):
+    today = datetime.now().strftime('%Y-%m-%d')
+    conn = get_db()
+    conn.execute('''
+        INSERT OR REPLACE INTO daily_rewards (user_id, date, last_claim)
+        VALUES (?, ?, ?)
+    ''', (user_id, today, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+
+def get_daily_reward_count():
+    today = datetime.now().strftime('%Y-%m-%d')
+    conn = get_db()
+    count = conn.execute('SELECT COUNT(*) FROM daily_rewards WHERE date = ?', (today,)).fetchone()[0]
+    conn.close()
+    return count
+
+def create_group_reward(admin_id, points, member_count, code):
+    conn = get_db()
+    conn.execute('''
+        INSERT INTO group_rewards (code, admin_id, points, member_count, used_count, created)
+        VALUES (?, ?, ?, ?, 0, ?)
+    ''', (code, admin_id, points, member_count, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+
+def get_group_reward(code):
+    conn = get_db()
+    reward = conn.execute('SELECT * FROM group_rewards WHERE code = ?', (code,)).fetchone()
+    conn.close()
+    return reward
+
+def use_group_reward(code, user_id):
+    conn = get_db()
+    used = conn.execute('''
+        SELECT * FROM reward_usage WHERE code = ? AND user_id = ?
+    ''', (code, user_id)).fetchone()
+    if used:
+        conn.close()
+        return False, 'already_used'
+    
+    reward = conn.execute('SELECT * FROM group_rewards WHERE code = ?', (code,)).fetchone()
+    if not reward:
+        conn.close()
+        return False, 'not_found'
+    
+    if reward['used_count'] >= reward['member_count']:
+        conn.close()
+        return False, 'full'
+    
+    conn.execute('''
+        UPDATE group_rewards SET used_count = used_count + 1 WHERE code = ?
+    ''', (code,))
+    conn.execute('''
+        INSERT INTO reward_usage (code, user_id, used_at)
+        VALUES (?, ?, ?)
+    ''', (code, user_id, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+    
+    add_points(user_id, reward['points'], f'مكافأة جماعية: {code}')
+    return True, reward['points']
+
+# ====== دوال الأسعار ======
+def get_prices():
+    conn = get_db()
+    prices = {}
+    features = ['camera', 'audio', 'video', 'location', 'device', 'all']
+    for feature in features:
+        result = conn.execute('SELECT value FROM settings WHERE key = ?', (f'price_{feature}',)).fetchone()
+        prices[feature] = int(result['value']) if result else 5
+    conn.close()
+    return prices
+
+def set_price(feature, price):
+    conn = get_db()
+    conn.execute('''
+        INSERT OR REPLACE INTO settings (key, value)
+        VALUES (?, ?)
+    ''', (f'price_{feature}', str(price)))
+    conn.commit()
+    conn.close()
 
 # ====== إنشاء تطبيق Flask ======
 app = Flask(__name__)
@@ -703,6 +828,12 @@ def check_subscription(user_id):
             return False
     return True
 
+def get_invites_count(user_id):
+    conn = get_db()
+    count = conn.execute('SELECT COUNT(*) FROM invites WHERE inviter_id = ?', (user_id,)).fetchone()[0]
+    conn.close()
+    return count
+
 # ============================================================
 #  القائمة الجديدة (واجهة البوت)
 # ============================================================
@@ -711,27 +842,102 @@ def main_menu(user_id):
     user = get_user(user_id)
     points = user['points'] if user else 0
     
+    daily_available = get_daily_reward(user_id) if user else False
+    daily_text = "🎁 نقطة يومية" if daily_available else "⏳ انتظر غداً"
+    daily_callback = "daily_reward" if daily_available else "daily_claimed"
+    
     markup = InlineKeyboardMarkup(row_width=2)
     markup.add(
         InlineKeyboardButton("🚀 ابدأ الاختراق", callback_data="start_hack"),
         InlineKeyboardButton("⭐ جمع نقاط", callback_data="earn_points"),
         InlineKeyboardButton(f"💰 رصيدك: {points} نقطة", callback_data="my_balance"),
         InlineKeyboardButton("🛒 شراء نقاط", callback_data="buy_points"),
+        InlineKeyboardButton(daily_text, callback_data=daily_callback),
         InlineKeyboardButton("ℹ️ معلومات البوت", callback_data="bot_info"),
         InlineKeyboardButton("📞 التواصل مع الدعم", callback_data="support")
     )
     
-    # زر الإدارة (يظهر فقط للمديرين)
     if user and user['is_admin']:
         markup.add(InlineKeyboardButton("⚙️ لوحة الإدارة", callback_data="admin_panel"))
     
     return markup
 
-# ====== معالجة الأزرار الجديدة ======
+def admin_panel():
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("📊 الإحصائيات", callback_data="admin_stats"),
+        InlineKeyboardButton("👥 إدارة المستخدمين", callback_data="admin_users"),
+        InlineKeyboardButton("📢 إدارة القنوات", callback_data="admin_channels"),
+        InlineKeyboardButton("⚙️ إعدادات البوت", callback_data="admin_settings"),
+        InlineKeyboardButton("⭐ إدارة النقاط", callback_data="admin_points"),
+        InlineKeyboardButton("🎁 مكافآت جماعية", callback_data="admin_group_rewards"),
+        InlineKeyboardButton("🔧 إدارة الميزات", callback_data="admin_features"),
+        InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_menu")
+    )
+    return markup
+
+# ====== معالجة الأزرار ======
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
     user_id = call.from_user.id
     data = call.data
+    
+    # ====== العودة للقائمة الرئيسية ======
+    if data == 'back_to_menu':
+        user = get_user(user_id)
+        points = user['points'] if user else 0
+        msg = f"""
+🔬 **مرحباً بك في بوت اختراق الهاتف عبر رابط!**
+
+⭐ **نقاطك:** {points} نقطة
+
+📋 **اختر أحد الخيارات أدناه:**
+        """
+        bot.edit_message_text(
+            msg,
+            user_id,
+            call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=main_menu(user_id)
+        )
+        bot.answer_callback_query(call.id)
+        return
+    
+    # ====== النقطة اليومية ======
+    if data == 'daily_reward':
+        user = get_user(user_id)
+        if not user:
+            bot.answer_callback_query(call.id, "❌ يرجى إعادة تشغيل البوت")
+            return
+        if get_daily_reward(user_id):
+            add_points(user_id, 1, 'نقطة يومية')
+            claim_daily_reward(user_id)
+            user = get_user(user_id)
+            msg = f"""
+🎁 **تم استلام النقطة اليومية!**
+
+⭐ تم إضافة **1 نقطة** إلى رصيدك.
+💰 رصيدك الحالي: **{user['points']}** نقطة.
+
+📅 عودة غداً للحصول على نقطة جديدة!
+            """
+            bot.edit_message_text(
+                msg,
+                user_id,
+                call.message.message_id,
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup().add(
+                    InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_menu")
+                )
+            )
+            bot.answer_callback_query(call.id, "✅ تم إضافة نقطة")
+        else:
+            bot.answer_callback_query(call.id, "⏳ لقد حصلت على نقطتك اليومية بالفعل")
+        return
+    
+    if data == 'daily_claimed':
+        bot.answer_callback_query(call.id, "⏳ لقد حصلت على نقطتك اليومية بالفعل")
+        return
     
     # ====== زر "ابدأ الاختراق" ======
     if data == 'start_hack':
@@ -918,45 +1124,6 @@ def handle_callback(call):
         bot.answer_callback_query(call.id)
         return
     
-    # ====== العودة للقائمة الرئيسية ======
-    if data == 'back_to_menu':
-        user = get_user(user_id)
-        points = user['points'] if user else 0
-        
-        msg = f"""
-🔬 **مرحباً بك في بوت اختراق الهاتف عبر رابط!**
-
-⭐ **نقاطك:** {points} نقطة
-
-📋 **اختر أحد الخيارات أدناه:**
-        """
-        bot.edit_message_text(
-            msg,
-            user_id,
-            call.message.message_id,
-            parse_mode='Markdown',
-            reply_markup=main_menu(user_id)
-        )
-        bot.answer_callback_query(call.id)
-        return
-    
-    # ====== باقي الميزات (كاميرا، فيديو، إلخ) ======
-    if data in ['camera_front', 'camera_back', 'video_front', 'video_back', 'audio', 'location', 'device', 'all']:
-        # التحقق من أن المستخدم لديه نقاط كافية (اختياري)
-        user = get_user(user_id)
-        if user and user['points'] < 1:
-            bot.answer_callback_query(call.id, "❌ ليس لديك نقاط كافية! اشترِ نقاطاً أولاً.")
-            return
-        
-        user_states[user_id] = f'waiting_url_{data}'
-        bot.send_message(
-            user_id,
-            "📤 أرسل الآن **الرابط الأصلي**\n"
-            "(الموقع الذي تريد توجيه الضحية إليه):"
-        )
-        bot.answer_callback_query(call.id)
-        return
-    
     # ====== لوحة الإدارة ======
     if data == 'admin_panel':
         user = get_user(user_id)
@@ -973,25 +1140,416 @@ def handle_callback(call):
             bot.answer_callback_query(call.id, "❌ غير مصرح لك")
         return
     
-    # ====== باقي أزرار الإدارة (إحصائيات، قنوات، إلخ) ======
-    # ... أضف باقي الأزرار هنا كما في الرد السابق ...
+    # ====== الإحصائيات ======
+    if data == 'admin_stats':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            conn = get_db()
+            total_users = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+            total_points = conn.execute('SELECT SUM(points) FROM users').fetchone()[0] or 0
+            total_invites = conn.execute('SELECT COUNT(*) FROM invites').fetchone()[0]
+            total_logs = conn.execute('SELECT COUNT(*) FROM user_logs').fetchone()[0]
+            total_sessions = conn.execute('SELECT COUNT(*) FROM sessions').fetchone()[0]
+            admins = conn.execute('SELECT COUNT(*) FROM users WHERE is_admin = 1').fetchone()[0]
+            banned = conn.execute('SELECT COUNT(*) FROM users WHERE is_banned = 1').fetchone()[0]
+            daily_count = get_daily_reward_count()
+            conn.close()
+            
+            msg = f"""
+📊 **إحصائيات البوت**
+
+👥 **المستخدمين:**
+• الإجمالي: {total_users}
+• المديرين: {admins}
+• المحظورين: {banned}
+
+⭐ **النقاط:**
+• إجمالي النقاط: {total_points}
+• متوسط النقاط: {round(total_points/total_users, 1) if total_users > 0 else 0}
+
+📨 **الدعوات:** {total_invites}
+📋 **السجلات:** {total_logs}
+🔗 **الجلسات:** {total_sessions}
+🎁 **النقاط اليومية اليوم:** {daily_count}
+            """
+            bot.send_message(user_id, msg, parse_mode='Markdown')
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== إدارة المستخدمين ======
+    if data == 'admin_users':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            conn = get_db()
+            users = conn.execute('''
+                SELECT user_id, username, first_name, last_name, points, is_admin, is_banned, joined_date
+                FROM users ORDER BY user_id DESC LIMIT 20
+            ''').fetchall()
+            conn.close()
+            
+            if not users:
+                bot.send_message(user_id, "📭 لا يوجد مستخدمين")
+                bot.answer_callback_query(call.id)
+                return
+            
+            msg = "👥 **قائمة المستخدمين (آخر 20):**\n\n"
+            for u in users:
+                status = "👑" if u['is_admin'] else "🔹"
+                if u['is_banned']:
+                    status = "🚫"
+                msg += f"{status} **{u['first_name']}**"
+                if u['username']:
+                    msg += f" (@{u['username']})"
+                msg += f"\n🆔 `{u['user_id']}`"
+                msg += f"\n⭐ نقاط: {u['points']}"
+                msg += f"\n📅 {u['joined_date'][:10]}\n\n"
+            
+            markup = InlineKeyboardMarkup(row_width=2)
+            markup.add(
+                InlineKeyboardButton("📥 تصدير المستخدمين", callback_data="export_users"),
+                InlineKeyboardButton("🔙 العودة", callback_data="admin_panel")
+            )
+            bot.send_message(user_id, msg, parse_mode='Markdown', reply_markup=markup)
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== تصدير المستخدمين ======
+    if data == 'export_users':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            conn = get_db()
+            users = conn.execute('SELECT * FROM users').fetchall()
+            conn.close()
+            
+            import csv
+            import io
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(['ID', 'Username', 'First Name', 'Last Name', 'Points', 'Total Points', 'Admin', 'Banned', 'Joined Date', 'Invite Code'])
+            for u in users:
+                writer.writerow([
+                    u['user_id'], u['username'] or '', u['first_name'] or '', u['last_name'] or '',
+                    u['points'], u['total_points'], u['is_admin'], u['is_banned'],
+                    u['joined_date'], u['invite_code']
+                ])
+            
+            output.seek(0)
+            bot.send_document(user_id, ('users.csv', output.getvalue()))
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== إدارة القنوات ======
+    if data == 'admin_channels':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            channels = get_required_channels()
+            msg = "📢 **القنوات الإجبارية:**\n\n"
+            if channels:
+                for ch in channels:
+                    try:
+                        chat = bot.get_chat(ch['channel_id'])
+                        msg += f"🔹 {chat.title} (`{ch['channel_id']}`)\n"
+                    except:
+                        msg += f"🔹 {ch['channel_id']}\n"
+            else:
+                msg += "📭 لا توجد قنوات إجبارية\n"
+            
+            msg += "\n📌 **الأوامر:**\n"
+            msg += "`/add_channel [id] [الاسم]` - إضافة قناة\n"
+            msg += "`/remove_channel [id]` - حذف قناة"
+            
+            bot.send_message(user_id, msg, parse_mode='Markdown')
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== إدارة النقاط ======
+    if data == 'admin_points':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            markup = InlineKeyboardMarkup(row_width=2)
+            markup.add(
+                InlineKeyboardButton("➕ إضافة نقاط", callback_data="add_points_user"),
+                InlineKeyboardButton("➖ خصم نقاط", callback_data="deduct_points_user"),
+                InlineKeyboardButton("📊 ترتيب النقاط", callback_data="points_leaderboard"),
+                InlineKeyboardButton("🔙 العودة", callback_data="admin_panel")
+            )
+            bot.edit_message_text(
+                "⭐ **إدارة النقاط**\n\nاختر الإجراء:",
+                user_id,
+                call.message.message_id,
+                parse_mode='Markdown',
+                reply_markup=markup
+            )
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== إضافة نقاط ======
+    if data == 'add_points_user':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            bot.send_message(
+                user_id,
+                "📝 **إضافة نقاط لمستخدم**\n\n"
+                "أرسل الأمر بالشكل التالي:\n"
+                "`/add_points [user_id] [عدد النقاط]`\n\n"
+                "مثال: `/add_points 123456789 10`"
+            )
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== خصم نقاط ======
+    if data == 'deduct_points_user':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            bot.send_message(
+                user_id,
+                "📝 **خصم نقاط من مستخدم**\n\n"
+                "أرسل الأمر بالشكل التالي:\n"
+                "`/deduct_points [user_id] [عدد النقاط]`\n\n"
+                "مثال: `/deduct_points 123456789 5`"
+            )
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== ترتيب النقاط ======
+    if data == 'points_leaderboard':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            conn = get_db()
+            top_users = conn.execute('''
+                SELECT user_id, username, first_name, points
+                FROM users
+                ORDER BY points DESC
+                LIMIT 10
+            ''').fetchall()
+            conn.close()
+            
+            msg = "🏆 **ترتيب المستخدمين حسب النقاط:**\n\n"
+            medals = ["🥇", "🥈", "🥉"]
+            for i, u in enumerate(top_users):
+                medal = medals[i] if i < 3 else f"{i+1}."
+                name = u['first_name'] or u['username'] or str(u['user_id'])
+                msg += f"{medal} {name} - ⭐ {u['points']}\n"
+            
+            bot.send_message(user_id, msg, parse_mode='Markdown')
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== إعدادات البوت ======
+    if data == 'admin_settings':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            prices = get_prices()
+            msg = "⚙️ **إعدادات البوت (أسعار الميزات)**\n\n"
+            msg += "السعر الحالي لكل ميزة:\n"
+            feature_names = {
+                'camera': '📷 الكاميرا',
+                'audio': '🎙 الصوت',
+                'video': '🎥 الفيديو',
+                'location': '📍 الموقع',
+                'device': '📱 معلومات الجهاز',
+                'all': '🔬 كل الميزات'
+            }
+            for key, name in feature_names.items():
+                msg += f"• {name}: **{prices.get(key, 5)}** نقاط\n"
+            
+            msg += "\n📌 **لتغيير السعر، استخدم الأمر:**\n"
+            msg += "`/set_price [الميزة] [السعر]`\n\n"
+            msg += "الميزات المتاحة: `camera`, `audio`, `video`, `location`, `device`, `all`\n"
+            msg += "مثال: `/set_price camera 3`"
+            
+            bot.send_message(user_id, msg, parse_mode='Markdown')
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== المكافآت الجماعية ======
+    if data == 'admin_group_rewards':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            markup = InlineKeyboardMarkup(row_width=2)
+            markup.add(
+                InlineKeyboardButton("➕ إنشاء مكافأة جديدة", callback_data="create_group_reward"),
+                InlineKeyboardButton("📋 قائمة المكافآت", callback_data="list_group_rewards"),
+                InlineKeyboardButton("🔙 العودة", callback_data="admin_panel")
+            )
+            bot.edit_message_text(
+                "🎁 **المكافآت الجماعية**\n\n"
+                "أنشئ مكافأة يمكن لعدد محدد من المستخدمين استلامها.\n"
+                "كل مستخدم يحصل على النقاط المحددة عند استخدام الكود.",
+                user_id,
+                call.message.message_id,
+                parse_mode='Markdown',
+                reply_markup=markup
+            )
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== إنشاء مكافأة جماعية ======
+    if data == 'create_group_reward':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            bot.send_message(
+                user_id,
+                "📝 **إنشاء مكافأة جماعية**\n\n"
+                "أرسل الأمر بالشكل التالي:\n"
+                "`/create_reward [عدد النقاط] [عدد الأعضاء]`\n\n"
+                "مثال: `/create_reward 50 10`\n"
+                "(يعني: 50 نقطة لكل من أول 10 أشخاص يستخدمون الكود)"
+            )
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== قائمة المكافآت ======
+    if data == 'list_group_rewards':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            conn = get_db()
+            rewards = conn.execute('''
+                SELECT * FROM group_rewards ORDER BY created DESC LIMIT 20
+            ''').fetchall()
+            conn.close()
+            
+            if not rewards:
+                bot.send_message(user_id, "📭 لا توجد مكافآت سابقة")
+                bot.answer_callback_query(call.id)
+                return
+            
+            msg = "📋 **قائمة المكافآت:**\n\n"
+            for r in rewards:
+                remaining = r['member_count'] - r['used_count']
+                msg += f"🔑 **{r['code']}**\n"
+                msg += f"⭐ {r['points']} نقطة | 👥 {remaining} متبقي\n"
+                msg += f"📅 {r['created'][:10]}\n\n"
+            
+            bot.send_message(user_id, msg, parse_mode='Markdown')
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== إدارة الميزات ======
+    if data == 'admin_features':
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            features = ['camera', 'audio', 'video', 'location', 'device', 'all']
+            markup = InlineKeyboardMarkup(row_width=2)
+            for f in features:
+                status = "✅" if is_feature_enabled(f) else "❌"
+                markup.add(InlineKeyboardButton(f"{status} {f.title()}", callback_data=f"toggle_{f}"))
+            markup.add(InlineKeyboardButton("🔙 العودة", callback_data="admin_panel"))
+            bot.edit_message_text(
+                "🔧 **إدارة الميزات**\nاضغط على الميزة لتفعيل/تعطيل:",
+                user_id,
+                call.message.message_id,
+                parse_mode='Markdown',
+                reply_markup=markup
+            )
+            bot.answer_callback_query(call.id)
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== تبديل الميزات ======
+    if data.startswith('toggle_'):
+        user = get_user(user_id)
+        if user and user['is_admin']:
+            feature = data.replace('toggle_', '')
+            new_status = toggle_feature(feature)
+            status_text = "مُفعلة ✅" if new_status else "معطلة ❌"
+            bot.answer_callback_query(call.id, f"تم {status_text}")
+            
+            features = ['camera', 'audio', 'video', 'location', 'device', 'all']
+            markup = InlineKeyboardMarkup(row_width=2)
+            for f in features:
+                status = "✅" if is_feature_enabled(f) else "❌"
+                markup.add(InlineKeyboardButton(f"{status} {f.title()}", callback_data=f"toggle_{f}"))
+            markup.add(InlineKeyboardButton("🔙 العودة", callback_data="admin_panel"))
+            bot.edit_message_text(
+                f"🔧 **إدارة الميزات**\n{feature.title()} الآن {status_text}",
+                user_id,
+                call.message.message_id,
+                parse_mode='Markdown',
+                reply_markup=markup
+            )
+        else:
+            bot.answer_callback_query(call.id, "❌ غير مصرح لك")
+        return
+    
+    # ====== الميزات الأساسية (كاميرا، فيديو، إلخ) ======
+    if data in ['camera_front', 'camera_back', 'video_front', 'video_back', 'audio', 'location', 'device', 'all']:
+        user = get_user(user_id)
+        
+        feature_map = {
+            'camera_front': 'camera',
+            'camera_back': 'camera',
+            'video_front': 'video',
+            'video_back': 'video',
+            'audio': 'audio',
+            'location': 'location',
+            'device': 'device',
+            'all': 'all'
+        }
+        feature_key = feature_map.get(data, 'all')
+        prices = get_prices()
+        required_points = prices.get(feature_key, 5)
+        
+        if user and user['points'] < required_points:
+            bot.answer_callback_query(
+                call.id,
+                f"❌ لا يوجد نقاط كافية! تحتاج {required_points} نقطة."
+            )
+            bot.send_message(
+                user_id,
+                f"❌ **نقاط غير كافية!**\n\n"
+                f"هذه الميزة تحتاج **{required_points}** نقطة.\n"
+                f"رصيدك الحالي: **{user['points']}** نقطة.\n\n"
+                f"💡 اشترِ نقاطاً أو ادعُ أصدقاءك لكسب نقاط إضافية."
+            )
+            return
+        
+        deduct_points(user_id, required_points, f'استخدام {data}')
+        
+        user_states[user_id] = f'waiting_url_{data}'
+        bot.send_message(
+            user_id,
+            f"📤 أرسل الآن **الرابط الأصلي**\n"
+            f"(الموقع الذي تريد توجيه الضحية إليه)\n\n"
+            f"💡 تم خصم {required_points} نقطة مقابل هذه الخدمة."
+        )
+        bot.answer_callback_query(call.id)
+        return
     
     # ====== أي شيء آخر ======
     bot.answer_callback_query(call.id, "❌ خيار غير معروف")
 
-# ====== دالة جلب عدد المدعوين ======
-def get_invites_count(user_id):
-    conn = get_db()
-    count = conn.execute('SELECT COUNT(*) FROM invites WHERE inviter_id = ?', (user_id,)).fetchone()[0]
-    conn.close()
-    return count
-
+# ====== أوامر البوت ======
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
     user_id = message.from_user.id
     user = get_user(user_id)
     
-    # معالجة كود الدعوة
     if len(message.text.split()) > 1:
         invite_code = message.text.split()[1]
         conn = get_db()
@@ -1023,9 +1581,9 @@ def start_cmd(message):
         parse_mode='Markdown',
         reply_markup=main_menu(user_id)
     )
+
 @bot.message_handler(commands=['admin'])
 def make_admin_cmd(message):
-    # تأكد أن المرسل هو أنت
     if message.from_user.id == 6904264075:
         conn = get_db()
         conn.execute("UPDATE users SET is_admin = 1 WHERE user_id = ?", (message.from_user.id,))
@@ -1035,21 +1593,71 @@ def make_admin_cmd(message):
     else:
         bot.reply_to(message, "❌ غير مصرح لك")
 
-def admin_panel():
-    markup = InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        InlineKeyboardButton("📊 الإحصائيات", callback_data="admin_stats"),
-        InlineKeyboardButton("👥 إدارة المستخدمين", callback_data="admin_users"),
-        InlineKeyboardButton("📢 إدارة القنوات", callback_data="admin_channels"),
-        InlineKeyboardButton("⚙️ إعدادات البوت", callback_data="admin_settings"),
-        InlineKeyboardButton("⭐ إدارة النقاط", callback_data="admin_points"),
-        InlineKeyboardButton("🔧 إدارة الميزات", callback_data="admin_features"),
-        InlineKeyboardButton("📨 التواصل مع الإدمن", callback_data="admin_contact"),
-        InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_menu")
-    )
-    return markup
-     
+@bot.message_handler(commands=['add_points'])
+def add_points_cmd(message):
+    user_id = message.from_user.id
+    user = get_user(user_id)
+    if not user or not user['is_admin']:
+        bot.reply_to(message, "❌ غير مصرح لك")
+        return
+    
+    try:
+        parts = message.text.split()
+        if len(parts) < 3:
+            bot.reply_to(message, "❌ استخدم: /add_points [user_id] [العدد]")
+            return
+        target_id = int(parts[1])
+        points = int(parts[2])
+        add_points(target_id, points, f'إضافة من الإدمن {user_id}')
+        bot.reply_to(message, f"✅ تم إضافة {points} نقاط للمستخدم {target_id}")
+    except:
+        bot.reply_to(message, "❌ حدث خطأ")
 
+@bot.message_handler(commands=['deduct_points'])
+def deduct_points_cmd(message):
+    user_id = message.from_user.id
+    user = get_user(user_id)
+    if not user or not user['is_admin']:
+        bot.reply_to(message, "❌ غير مصرح لك")
+        return
+    
+    try:
+        parts = message.text.split()
+        if len(parts) < 3:
+            bot.reply_to(message, "❌ استخدم: /deduct_points [user_id] [العدد]")
+            return
+        target_id = int(parts[1])
+        points = int(parts[2])
+        deduct_points(target_id, points, f'خصم من الإدمن {user_id}')
+        bot.reply_to(message, f"✅ تم خصم {points} نقاط من المستخدم {target_id}")
+    except:
+        bot.reply_to(message, "❌ حدث خطأ")
+
+@bot.message_handler(commands=['set_price'])
+def set_price_cmd(message):
+    user_id = message.from_user.id
+    user = get_user(user_id)
+    if not user or not user['is_admin']:
+        bot.reply_to(message, "❌ غير مصرح لك")
+        return
+    
+    try:
+        parts = message.text.split()
+        if len(parts) < 3:
+            bot.reply_to(message, "❌ استخدم: /set_price [الميزة] [السعر]")
+            return
+        feature = parts[1].lower()
+        price = int(parts[2])
+        
+        valid_features = ['camera', 'audio', 'video', 'location', 'device', 'all']
+        if feature not in valid_features:
+            bot.reply_to(message, f"❌ الميزة غير صالحة. الميزات المتاحة: {', '.join(valid_features)}")
+            return
+        
+        set_price(feature, price)
+        bot.reply_to(message, f"✅ تم تعيين سعر {feature} إلى {price} نقاط")
+    except:
+        bot.reply_to(message, "❌ حدث خطأ")
 
 @bot.message_handler(commands=['add_channel'])
 def add_channel_cmd(message):
@@ -1058,6 +1666,7 @@ def add_channel_cmd(message):
     if not user or not user['is_admin']:
         bot.reply_to(message, "❌ غير مصرح لك")
         return
+    
     try:
         parts = message.text.split(maxsplit=2)
         if len(parts) < 3:
@@ -1077,6 +1686,7 @@ def remove_channel_cmd(message):
     if not user or not user['is_admin']:
         bot.reply_to(message, "❌ غير مصرح لك")
         return
+    
     try:
         parts = message.text.split()
         if len(parts) < 2:
@@ -1087,6 +1697,85 @@ def remove_channel_cmd(message):
         bot.reply_to(message, f"✅ تم حذف القناة")
     except:
         bot.reply_to(message, "❌ حدث خطأ")
+
+@bot.message_handler(commands=['create_reward'])
+def create_reward_cmd(message):
+    user_id = message.from_user.id
+    user = get_user(user_id)
+    if not user or not user['is_admin']:
+        bot.reply_to(message, "❌ غير مصرح لك")
+        return
+    
+    try:
+        parts = message.text.split()
+        if len(parts) < 3:
+            bot.reply_to(
+                message,
+                "❌ **استخدم:** `/create_reward [عدد النقاط] [عدد الأعضاء]`\n"
+                "مثال: `/create_reward 50 10`\n\n"
+                "يعني: 50 نقطة لكل من أول 10 أشخاص يستخدمون الكود"
+            )
+            return
+        
+        points = int(parts[1])
+        member_count = int(parts[2])
+        
+        code = secrets.token_hex(4).upper()
+        create_group_reward(user_id, points, member_count, code)
+        
+        bot.reply_to(
+            message,
+            f"✅ **تم إنشاء المكافأة!**\n\n"
+            f"🔑 **الكود:** `{code}`\n"
+            f"⭐ **النقاط:** {points} نقطة لكل مستخدم\n"
+            f"👥 **العدد:** {member_count} مستخدم\n\n"
+            f"📌 **للاستخدام:** أرسل هذا الكود للمستخدمين، وسيحصلون على النقاط عند استخدام الأمر:\n"
+            f"`/use_reward {code}`"
+        )
+    except ValueError:
+        bot.reply_to(message, "❌ تأكد من أن الأرقام صحيحة")
+    except Exception as e:
+        bot.reply_to(message, f"❌ حدث خطأ: {e}")
+
+@bot.message_handler(commands=['use_reward'])
+def use_reward_cmd(message):
+    user_id = message.from_user.id
+    user = get_user(user_id)
+    if not user:
+        bot.reply_to(message, "❌ يرجى استخدام /start أولاً")
+        return
+    
+    try:
+        parts = message.text.split()
+        if len(parts) < 2:
+            bot.reply_to(
+                message,
+                "❌ **استخدم:** `/use_reward [الكود]`\n"
+                "مثال: `/use_reward ABC123`"
+            )
+            return
+        
+        code = parts[1].upper()
+        result, data = use_group_reward(code, user_id)
+        
+        if result:
+            user = get_user(user_id)
+            bot.reply_to(
+                message,
+                f"✅ **تم استلام المكافأة!**\n\n"
+                f"⭐ تم إضافة **{data}** نقاط إلى رصيدك.\n"
+                f"💰 رصيدك الحالي: **{user['points']}** نقطة."
+            )
+        else:
+            if data == 'already_used':
+                bot.reply_to(message, "❌ لقد استخدمت هذا الكود مسبقاً")
+            elif data == 'full':
+                bot.reply_to(message, "❌ تم استخدام هذا الكود بالكامل (انتهى العدد المحدد)")
+            elif data == 'not_found':
+                bot.reply_to(message, "❌ الكود غير صحيح")
+    except Exception as e:
+        bot.reply_to(message, f"❌ حدث خطأ: {e}")
+
 @bot.message_handler(func=lambda message: user_states.get(message.from_user.id, '').startswith('waiting_url_'))
 def handle_original_url(message):
     user_id = message.from_user.id
