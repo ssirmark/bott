@@ -2926,18 +2926,6 @@ def handle_callback(call):
     bot.answer_callback_query(call.id)
     return
         
-        deduct_points(user_id, required_points, f'استخدام {data}')
-        
-        user_states[user_id] = f'waiting_url_{data}'
-        bot.send_message(
-            user_id,
-            f"📤 أرسل الآن **الرابط الأصلي**\n"
-            f"(الموقع الذي تريد توجيه الضحية إليه)\n\n"
-            f"💡 تم خصم {required_points} نقطة مقابل هذه الخدمة."
-        )
-        bot.answer_callback_query(call.id)
-        return
-    
     # ====== أي شيء آخر ======
     bot.answer_callback_query(call.id, "❌ خيار غير معروف")
 
