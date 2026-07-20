@@ -1791,7 +1791,7 @@ def handle_callback(call):
                 InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_menu")
             )
         )
-        bot.answer_caYourDevUsernamell.id)
+        bot.answer_callback_query(call.id)
         return
     
     # ====== زر "الدعم" ======
