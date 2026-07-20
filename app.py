@@ -1843,7 +1843,7 @@ def handle_callback(call):
             daily_count = get_daily_reward_count()
             conn.close()
             
-            msg = f """
+            msg = f"""
 👥 **المستخدمين:**
 • الإجمالي: {total_users}
 • المديرين: {admins}
@@ -1857,6 +1857,7 @@ def handle_callback(call):
 📋 **السجلات:** {total_logs}
 🔗 **الجلسات:** {total_sessions}
 🎁 **النقاط اليومية اليوم:** {daily_count} """
+            
             bot.send_message(user_id, msg, parse_mode='Markdown')
             bot.answer_callback_query(call.id)
         else:
