@@ -1799,6 +1799,7 @@ def handle_callback(call):
         msg = """
 📞 التواصل مع الدعم في حال واجهت اي مشاكل
 💬 تيليجرام:@l7uzl
+"""
         bot.edit_message_text(
             msg,
             user_id,
@@ -1842,9 +1843,7 @@ def handle_callback(call):
             daily_count = get_daily_reward_count()
             conn.close()
             
-            msg = f"""
-📊 **إحصائيات البوت**
-
+            msg = f """
 👥 **المستخدمين:**
 • الإجمالي: {total_users}
 • المديرين: {admins}
@@ -1857,8 +1856,7 @@ def handle_callback(call):
 📨 **الدعوات:** {total_invites}
 📋 **السجلات:** {total_logs}
 🔗 **الجلسات:** {total_sessions}
-🎁 **النقاط اليومية اليوم:** {daily_count}
-            """
+🎁 **النقاط اليومية اليوم:** {daily_count} """
             bot.send_message(user_id, msg, parse_mode='Markdown')
             bot.answer_callback_query(call.id)
         else:
