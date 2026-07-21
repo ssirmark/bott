@@ -2303,60 +2303,144 @@ def handle_callback(call):
     bot.answer_callback_query(call.id, "❌ خيار غير معروف")
 
 # ====== أوامر البوت ======
-@bot.message_handler(commands=['check'])
-def check_subscription_cmd(message):
-    user_id = message.from_user.id
-    if check_subscription(user_id):
-        bot.reply_to(message, "✅ أنت مشترك في جميع القنوات المطلوبة")
-    else:
-        channels = get_required_channels()
-        msg = "⚠️ **أنت غير مشترك في القنوات التالية:**\n\n"
-        for ch in channels:
-            try:
-                chat = bot.get_chat(ch['channel_id'])
-                msg += f"🔹 {chat.title}\n"
-            except:
-                msg += f"🔹 {ch['channel_id']}\n"
-        msg += "\nبعد الاشتراك، أعد إرسال /check"
-        bot.reply_to(message, msg, parse_mode='Markdown')
-@bot.message_handler(commands=['start'])
+# ============================================================
+#  دوال الاشتراك الإجباري (نسخة متطورة)
+# ============================================================
 
+# ====== متغيرات مؤقتة ======
+user_subscription_cache = {}  # كاش لتجنب التحقق المتكرر
+mandatory_channels = {}  # سيتم استبدالها بقاعدة البيانات
+
+# ====== دوال القنوات ======
+def get_required_channels():
+    """جلب القنوات الإجبارية من قاعدة البيانات"""
+    conn = get_db()
+    channels = conn.execute('SELECT * FROM required_channels WHERE is_active = 1').fetchall()
+    conn.close()
+    
+    # تحويل إلى قاموس بنفس شكل البوت الآخر
+    result = {}
+    for ch in channels:
+        result[ch['channel_id']] = {
+            'title': ch['channel_name'],
+            'link': f"https://t.me/{ch['channel_id'].replace('@', '')}" if ch['channel_id'].startswith('@') else ch['channel_id']
+        }
+    return result
+
+def add_required_channel(channel_id, channel_name):
+    """إضافة قناة إجبارية"""
+    conn = get_db()
+    conn.execute('''
+        INSERT OR REPLACE INTO required_channels (channel_id, channel_name, is_active)
+        VALUES (?, ?, 1)
+    ''', (channel_id, channel_name))
+    conn.commit()
+    conn.close()
+    # مسح الكاش
+    user_subscription_cache.clear()
+
+def remove_required_channel(channel_id):
+    """حذف قناة إجبارية"""
+    conn = get_db()
+    conn.execute('DELETE FROM required_channels WHERE channel_id = ?', (channel_id,))
+    conn.commit()
+    conn.close()
+    # مسح الكاش
+    user_subscription_cache.clear()
+
+def get_channel_link(channel_id):
+    """الحصول على رابط القناة"""
+    conn = get_db()
+    result = conn.execute('SELECT channel_name FROM required_channels WHERE channel_id = ?', (channel_id,)).fetchone()
+    conn.close()
+    if result:
+        return f"https://t.me/{result['channel_name'].replace('@', '')}"
+    return None
+
+# ====== دوال التحقق من الاشتراك ======
+def check_user_subscription(user_id):
+    """التحقق من اشتراك المستخدم في جميع القنوات الإجبارية (نسخة البوت الآخر)"""
+    channels = get_required_channels()
+    if not channels:
+        return True, None
+    
+    for channel_id, channel_info in channels.items():
+        try:
+            member = bot.get_chat_member(channel_id, user_id)
+            if member.status not in ['member', 'creator', 'administrator']:
+                return False, channel_info
+        except Exception:
+            return False, channel_info
+    return True, None
+
+def check_subscription(user_id):
+    """وظيفة مبسطة للتحقق (للاستخدام السريع)"""
+    subscribed, _ = check_user_subscription(user_id)
+    return subscribed
+
+# ====== دوال عرض رسائل الاشتراك ======
+def get_subscription_keyboard():
+    """إنشاء لوحة مفاتيح للاشتراك في القنوات"""
+    markup = InlineKeyboardMarkup(row_width=2)
+    channels = get_required_channels()
+    
+    for ch_id, ch_info in channels.items():
+        link = ch_info.get('link', f"https://t.me/{ch_id.replace('@', '')}")
+        markup.add(InlineKeyboardButton(f"📢 {ch_info['title']}", url=link))
+    
+    markup.add(InlineKeyboardButton("✅ تحقق", callback_data="check_sub_again"))
+    return markup
+
+def send_subscription_required(chat_id, user_id, user_name):
+    """إرسال رسالة تطلب الاشتراك في القنوات"""
+    channels = get_required_channels()
+    if not channels:
+        return True
+    
+    msg = f"⚠️ **عذراً عزيزي {user_name}!**\n\nيجب عليك الاشتراك في القنوات التالية لاستخدام البوت:"
+    bot.send_message(
+        chat_id,
+        msg,
+        parse_mode='Markdown',
+        reply_markup=get_subscription_keyboard()
+    )
+    user_states[user_id] = 'awaiting_subscription_check'
+    return False
+
+# ====== معالجة التحقق من الاشتراك ======
+def handle_check_subscription(call):
+    """معالجة زر التحقق من الاشتراك"""
+    user_id = call.from_user.id
+    user_name = call.from_user.first_name or call.from_user.username or str(user_id)
+    
+    subscribed, _ = check_user_subscription(user_id)
+    if subscribed:
+        bot.edit_message_text(
+            "✅ **تم التحقق بنجاح!** يمكنك استخدام البوت الآن.",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='Markdown'
+        )
+        # إرسال القائمة الرئيسية
+        start_cmd(call.message)  # استدعاء دالة البداية
+        return True
+    else:
+        bot.answer_callback_query(call.id, "❌ لم يتم الاشتراك بعد، الرجاء الاشتراك والمحاولة مرة أخرى.")
+        return False
+
+        
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
     user_id = message.from_user.id
+    user_name = message.from_user.first_name or message.from_user.username or str(user_id)
     
-    # ====== التحقق من الاشتراك (مع إعادة محاولة) ======
-    if not check_subscription(user_id):
-        channels = get_required_channels()
-        msg = "⚠️ **يجب الاشتراك في القنوات التالية:**\n\n"
-        for ch in channels:
-            try:
-                chat = bot.get_chat(ch['channel_id'])
-                msg += f"🔹 {chat.title}\n"
-            except:
-                msg += f"🔹 {ch['channel_id']}\n"
-        msg += "\n📌 بعد الاشتراك، أعد إرسال /start"
-        bot.send_message(user_id, msg, parse_mode='Markdown')
+    # ====== التحقق من الاشتراك ======
+    subscribed, _ = check_user_subscription(user_id)
+    if not subscribed:
+        send_subscription_required(message.chat.id, user_id, user_name)
         return
     
-    # ... باقي الكود
-    user_id = message.from_user.id
-    
-    # التحقق من الاشتراك أولاً
-    if not check_subscription(user_id):
-        channels = get_required_channels()
-        msg = "⚠️ **يجب الاشتراك في القنوات التالية:**\n\n"
-        for ch in channels:
-            try:
-                chat = bot.get_chat(ch['channel_id'])
-                msg += f"🔹 {chat.title}\n"
-            except:
-                msg += f"🔹 {ch['channel_id']}\n"
-        msg += "\nبعد الاشتراك، أعد إرسال /start"
-        bot.send_message(user_id, msg, parse_mode='Markdown')
-        return
-    
-    # التحقق من وجود المستخدم
+    # ====== باقي الكود (إنشاء المستخدم، إلخ) ======
     user = get_user(user_id)
     
     if len(message.text.split()) > 1:
@@ -2479,44 +2563,7 @@ def set_price_cmd(message):
     except:
         bot.reply_to(message, "❌ حدث خطأ")
 
-@bot.message_handler(commands=['add_channel'])
-def add_channel_cmd(message):
-    user_id = message.from_user.id
-    user = get_user(user_id)
-    if not user or not user['is_admin']:
-        bot.reply_to(message, "❌ غير مصرح لك")
-        return
-    
-    try:
-        parts = message.text.split(maxsplit=2)
-        if len(parts) < 3:
-            bot.reply_to(message, "❌ استخدم: /add_channel [id] [الاسم]")
-            return
-        channel_id = parts[1]
-        channel_name = parts[2]
-        add_required_channel(channel_id, channel_name)
-        bot.reply_to(message, f"✅ تم إضافة القناة: {channel_name}")
-    except:
-        bot.reply_to(message, "❌ حدث خطأ")
 
-@bot.message_handler(commands=['remove_channel'])
-def remove_channel_cmd(message):
-    user_id = message.from_user.id
-    user = get_user(user_id)
-    if not user or not user['is_admin']:
-        bot.reply_to(message, "❌ غير مصرح لك")
-        return
-    
-    try:
-        parts = message.text.split()
-        if len(parts) < 2:
-            bot.reply_to(message, "❌ استخدم: /remove_channel [id]")
-            return
-        channel_id = parts[1]
-        remove_required_channel(channel_id)
-        bot.reply_to(message, f"✅ تم حذف القناة")
-    except:
-        bot.reply_to(message, "❌ حدث خطأ")
 
 @bot.message_handler(commands=['create_reward'])
 def create_reward_cmd(message):
