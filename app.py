@@ -391,14 +391,22 @@ def get_daily_reward_count():
     conn.close()
     return count
 
-def create_group_reward(admin_id, points, member_count, code, expiry_minutes=60):
+def create_group_reward(admin_id, points, member_count, code, expiry_minutes=None):
     from datetime import timedelta
-    expiry_date = (datetime.now() + timedelta(minutes=expiry_minutes)).isoformat()
     conn = get_db()
-    conn.execute('''
-        INSERT INTO group_rewards (code, admin_id, points, member_count, used_count, created, expiry_date)
-        VALUES (?, ?, ?, ?, 0, ?, ?)
-    ''', (code, admin_id, points, member_count, datetime.now().isoformat(), expiry_date))
+    
+    if expiry_minutes:
+        expiry_date = (datetime.now() + timedelta(minutes=expiry_minutes)).isoformat()
+        conn.execute('''
+            INSERT INTO group_rewards (code, admin_id, points, member_count, used_count, created, expiry_date)
+            VALUES (?, ?, ?, ?, 0, ?, ?)
+        ''', (code, admin_id, points, member_count, datetime.now().isoformat(), expiry_date))
+    else:
+        conn.execute('''
+            INSERT INTO group_rewards (code, admin_id, points, member_count, used_count, created, expiry_date)
+            VALUES (?, ?, ?, ?, 0, ?, NULL)
+        ''', (code, admin_id, points, member_count, datetime.now().isoformat()))
+    
     conn.commit()
     conn.close()
     
@@ -1533,15 +1541,19 @@ def check_subscription(user_id):
     channels = get_required_channels()
     if not channels:
         return True
+    
     for channel in channels:
         try:
             member = bot.get_chat_member(channel['channel_id'], user_id)
+            # ✅ التحقق من أن المستخدم عضو أو مشترك أو ليس محظوراً
             if member.status in ['left', 'kicked']:
                 return False
-        except:
+        except Exception as e:
+            # إذا حدث خطأ (مثل البوت ليس أدمن في القناة)
+            print(f"⚠️ خطأ في التحقق من القناة {channel['channel_id']}: {e}")
             return False
     return True
-
+    
 def get_invites_count(user_id):
     conn = get_db()
     count = conn.execute('SELECT COUNT(*) FROM invites WHERE inviter_id = ?', (user_id,)).fetchone()[0]
@@ -2250,7 +2262,24 @@ def handle_callback(call):
     bot.answer_callback_query(call.id, "❌ خيار غير معروف")
 
 # ====== أوامر البوت ======
+@bot.message_handler(commands=['check'])
+def check_subscription_cmd(message):
+    user_id = message.from_user.id
+    if check_subscription(user_id):
+        bot.reply_to(message, "✅ أنت مشترك في جميع القنوات المطلوبة")
+    else:
+        channels = get_required_channels()
+        msg = "⚠️ **أنت غير مشترك في القنوات التالية:**\n\n"
+        for ch in channels:
+            try:
+                chat = bot.get_chat(ch['channel_id'])
+                msg += f"🔹 {chat.title}\n"
+            except:
+                msg += f"🔹 {ch['channel_id']}\n"
+        msg += "\nبعد الاشتراك، أعد إرسال /check"
+        bot.reply_to(message, msg, parse_mode='Markdown')
 @bot.message_handler(commands=['start'])
+
 def start_cmd(message):
     user_id = message.from_user.id
     
@@ -2443,20 +2472,29 @@ def create_reward_cmd(message):
         if len(parts) < 3:
             bot.reply_to(
                 message,
-                "❌ **استخدم:** `/create_reward [عدد النقاط] [عدد الأعضاء] [مدة الصلاحية بالدقائق]`\n"
-                "مثال: `/create_reward 50 10 60`\n"
-                "(60 = ساعة واحدة)"
+                "📝 **إنشاء مكافأة جماعية**\n\n"
+                "أرسل الأمر بالشكل التالي:\n"
+                "`/create_reward [عدد النقاط] [عدد الأعضاء]`\n\n"
+                "📌 **اختياري:** يمكنك إضافة مدة الصلاحية\n"
+                "`/create_reward [عدد النقاط] [عدد الأعضاء] [مدة الصلاحية بالدقائق]`\n\n"
+                "مثال: `/create_reward 50 10` (بدون مدة)\n"
+                "مثال: `/create_reward 50 10 60` (ساعة واحدة)"
             )
             return
         
         points = int(parts[1])
         member_count = int(parts[2])
-        expiry_minutes = int(parts[3]) if len(parts) > 3 else 60  # الافتراضي 60 دقيقة
+        expiry_minutes = int(parts[3]) if len(parts) > 3 else None
         
         code = secrets.token_hex(4).upper()
-        create_group_reward(user_id, points, member_count, code, expiry_minutes)
         
-        expiry_time = (datetime.now() + timedelta(minutes=expiry_minutes)).strftime('%Y-%m-%d %H:%M')
+        if expiry_minutes:
+            create_group_reward(user_id, points, member_count, code, expiry_minutes)
+            expiry_time = (datetime.now() + timedelta(minutes=expiry_minutes)).strftime('%Y-%m-%d %H:%M')
+            expiry_msg = f"⏱ **تنتهي:** {expiry_time}"
+        else:
+            create_group_reward(user_id, points, member_count, code)
+            expiry_msg = "⏱ **بدون صلاحية** (لن تنتهي)"
         
         bot.reply_to(
             message,
@@ -2464,14 +2502,14 @@ def create_reward_cmd(message):
             f"🔑 **الكود:** `{code}`\n"
             f"⭐ **النقاط:** {points} نقطة لكل مستخدم\n"
             f"👥 **العدد:** {member_count} مستخدم\n"
-            f"⏱ **تنتهي:** {expiry_time}\n\n"
+            f"{expiry_msg}\n\n"
             f"📌 **للاستخدام:** `/use_reward {code}`"
         )
     except ValueError:
         bot.reply_to(message, "❌ تأكد من أن الأرقام صحيحة")
     except Exception as e:
         bot.reply_to(message, f"❌ حدث خطأ: {e}")
-
+        
 @bot.message_handler(commands=['use_reward'])
 def use_reward_cmd(message):
     user_id = message.from_user.id
