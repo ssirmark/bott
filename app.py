@@ -2689,7 +2689,123 @@ def handle_original_url(message):
 ⏱ الصلاحية: 5 دقائق
 
     """, parse_mode='HTML')
+
+@bot.message_handler(commands=['add_channel'])
+def add_channel_cmd(message):
+    user_id = message.from_user.id
+    user = get_user(user_id)
     
+    # التحقق من صلاحيات المدير
+    if not user or not user['is_admin']:
+        bot.reply_to(message, "❌ غير مصرح لك - فقط المدير يمكنه إضافة قنوات")
+        return
+    
+    try:
+        # تحليل الأمر
+        parts = message.text.split(maxsplit=2)
+        if len(parts) < 3:
+            bot.reply_to(
+                message,
+                "❌ **استخدم الأمر بالشكل التالي:**\n"
+                "`/add_channel [معرف القناة] [الاسم]`\n\n"
+                "📌 **مثال:**\n"
+                "`/add_channel @l7uzl قناة l7uzl`\n"
+                "أو\n"
+                "`/add_channel -1001234567890 قناة الاختبار`",
+                parse_mode='Markdown'
+            )
+            return
+        
+        channel_id = parts[1].strip()
+        channel_name = parts[2].strip()
+        
+        # تنظيف المعرف
+        if channel_id.startswith('@'):
+            channel_id = channel_id[1:]
+            real_channel_id = f"@{channel_id}"
+        else:
+            real_channel_id = channel_id
+        
+        # ====== التحقق من وجود القناة ======
+        try:
+            chat = bot.get_chat(real_channel_id)
+            channel_title = chat.title
+        except Exception as e:
+            bot.reply_to(
+                message,
+                f"❌ **لم يتم العثور على القناة!**\n\n"
+                f"تأكد من:\n"
+                f"• المعرف صحيح: `{real_channel_id}`\n"
+                f"• البوت مضاف إلى القناة\n"
+                f"• البوت لديه صلاحيات كافية\n\n"
+                f"📌 **خطأ:** {str(e)}",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # ====== التحقق من أن البوت أدمن في القناة ======
+        try:
+            bot_member = bot.get_chat_member(real_channel_id, bot.get_me().id)
+            if bot_member.status not in ['administrator', 'creator']:
+                bot.reply_to(
+                    message,
+                    f"❌ **البوت ليس أدمن في القناة!**\n\n"
+                    f"يجب إضافة البوت كأدمن في القناة `{channel_title}` أولاً.",
+                    parse_mode='Markdown'
+                )
+                return
+        except Exception as e:
+            bot.reply_to(
+                message,
+                f"❌ **لا يمكن التحقق من صلاحيات البوت!**\n\n"
+                f"تأكد من أن البوت مضاف إلى القناة كأدمن.\n\n"
+                f"📌 **خطأ:** {str(e)}",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # ====== إضافة القناة إلى قاعدة البيانات ======
+        if real_channel_id.startswith('@'):
+            store_id = real_channel_id
+        else:
+            store_id = real_channel_id
+        
+        add_required_channel(store_id, channel_name)
+        
+        bot.reply_to(
+            message,
+            f"✅ **تم إضافة القناة بنجاح!**\n\n"
+            f"📢 **القناة:** {channel_title}\n"
+            f"🆔 **المعرف:** `{store_id}`\n"
+            f"📛 **الاسم:** {channel_name}\n\n"
+            f"📌 الآن سيُطلب من جميع المستخدمين الاشتراك في هذه القناة.",
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        bot.reply_to(message, f"❌ حدث خطأ: {str(e)}")
+
+@bot.message_handler(commands=['remove_channel'])
+def remove_channel_cmd(message):
+    user_id = message.from_user.id
+    user = get_user(user_id)
+    
+    if not user or not user['is_admin']:
+        bot.reply_to(message, "❌ غير مصرح لك")
+        return
+    
+    try:
+        parts = message.text.split()
+        if len(parts) < 2:
+            bot.reply_to(message, "❌ استخدم: /remove_channel [المعرف]")
+            return
+        
+        channel_id = parts[1].strip()
+        remove_required_channel(channel_id)
+        bot.reply_to(message, f"✅ تم حذف القناة `{channel_id}`")
+    except Exception as e:
+        bot.reply_to(message, f"❌ حدث خطأ: {e}")
+        
 # ====== تشغيل البوت ======
 def run_bot():
     print("🤖 بدء تشغيل البوت...")
