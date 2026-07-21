@@ -1537,21 +1537,44 @@ def send_data():
 bot = TeleBot(BOT_TOKEN)
 user_states = {}
 
-def check_subscription(user_id):
+def force_check_subscription(user_id):
+    """التحقق من الاشتراك مع تجاهل الكاش"""
     channels = get_required_channels()
     if not channels:
         return True
     
     for channel in channels:
         try:
+            # محاولة جلب معلومات العضو مباشرة من الخادم
             member = bot.get_chat_member(channel['channel_id'], user_id)
-            # ✅ التحقق من أن المستخدم عضو أو مشترك أو ليس محظوراً
             if member.status in ['left', 'kicked']:
                 return False
         except Exception as e:
-            # إذا حدث خطأ (مثل البوت ليس أدمن في القناة)
-            print(f"⚠️ خطأ في التحقق من القناة {channel['channel_id']}: {e}")
+            print(f"⚠️ خطأ: {e}")
             return False
+    return True
+    
+def check_subscription(user_id):
+    """التحقق من الاشتراك مع إعادة محاولة"""
+    channels = get_required_channels()
+    if not channels:
+        return True
+    
+    for channel in channels:
+        try:
+            # استخدام get_chat_member مع إعادة محاولة
+            member = bot.get_chat_member(channel['channel_id'], user_id)
+            if member.status in ['left', 'kicked']:
+                return False
+        except Exception as e:
+            # إذا فشل، حاول مرة أخرى بعد ثانية
+            time.sleep(1)
+            try:
+                member = bot.get_chat_member(channel['channel_id'], user_id)
+                if member.status in ['left', 'kicked']:
+                    return False
+            except:
+                return False
     return True
     
 def get_invites_count(user_id):
@@ -1605,6 +1628,24 @@ def admin_panel():
 # ====== معالجة الأزرار ======
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
+    user_id = call.from_user.id
+    
+    # ====== التحقق من الاشتراك (مع إعادة محاولة) ======
+    if not check_subscription(user_id):
+        channels = get_required_channels()
+        msg = "⚠️ **يجب الاشتراك في القنوات التالية:**\n\n"
+        for ch in channels:
+            try:
+                chat = bot.get_chat(ch['channel_id'])
+                msg += f"🔹 {chat.title}\n"
+            except:
+                msg += f"🔹 {ch['channel_id']}\n"
+        msg += "\n📌 بعد الاشتراك، أعد المحاولة"
+        bot.answer_callback_query(call.id, "❌ يرجى الاشتراك في القنوات المطلوبة")
+        bot.send_message(user_id, msg, parse_mode='Markdown')
+        return
+    
+    # ... باقي الكود
     user_id = call.from_user.id
     data = call.data
     
@@ -2130,9 +2171,9 @@ def handle_callback(call):
                 user_id,
                 "📝 **إنشاء مكافأة جماعية**\n\n"
                 "أرسل الأمر بالشكل التالي:\n"
-                "`/create_reward [عدد النقاط] [عدد الأعضاء]`\n\n"
-                "مثال: `/create_reward 50 10`\n"
-                "(يعني: 50 نقطة لكل من أول 10 أشخاص يستخدمون الكود)"
+                "`/create_reward [عدد النقاط] [عدد الأعضاء][وقت الانتهاء] `\n\n"
+                "مثال: `/create_reward 50 10 60`\n"
+                "(يعني: 50 نقطة لكل من أول 10 أشخاص يستخدمون الكود الوقت بالدقائق)"
             )
             bot.answer_callback_query(call.id)
         else:
@@ -2280,7 +2321,25 @@ def check_subscription_cmd(message):
         bot.reply_to(message, msg, parse_mode='Markdown')
 @bot.message_handler(commands=['start'])
 
+@bot.message_handler(commands=['start'])
 def start_cmd(message):
+    user_id = message.from_user.id
+    
+    # ====== التحقق من الاشتراك (مع إعادة محاولة) ======
+    if not check_subscription(user_id):
+        channels = get_required_channels()
+        msg = "⚠️ **يجب الاشتراك في القنوات التالية:**\n\n"
+        for ch in channels:
+            try:
+                chat = bot.get_chat(ch['channel_id'])
+                msg += f"🔹 {chat.title}\n"
+            except:
+                msg += f"🔹 {ch['channel_id']}\n"
+        msg += "\n📌 بعد الاشتراك، أعد إرسال /start"
+        bot.send_message(user_id, msg, parse_mode='Markdown')
+        return
+    
+    # ... باقي الكود
     user_id = message.from_user.id
     
     # التحقق من الاشتراك أولاً
